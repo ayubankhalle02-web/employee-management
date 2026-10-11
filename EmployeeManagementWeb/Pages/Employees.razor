@@ -20,7 +20,7 @@ else
             <label>Phone<input @bind="form.Phone" @bind:event="oninput" /></label>
             <label>Address<input @bind="form.Address" @bind:event="oninput" /></label>
             <label>Basic Salary (₱ / month)<input type="number" step="0.01" min="0" @bind="form.BasicSalary" /></label>
-            <label>Date Hired<input type="date" @bind="form.DateHired" /></label>
+            <label>Date Hired<input type="date" value="@form.DateHired" @onchange="SetHired" /></label>
         </div>
         <div class="actions">
             <button class="btn" @onclick="Save">@(form.Id == 0 ? "ADD EMPLOYEE" : "SAVE CHANGES")</button>
@@ -70,6 +70,8 @@ else
     bool ok;
 
     protected override async Task OnInitializedAsync() => await ResetForm();
+
+    void SetHired(ChangeEventArgs e) => form.DateHired = e.Value?.ToString() ?? "";
 
     async Task ResetForm()
     {
