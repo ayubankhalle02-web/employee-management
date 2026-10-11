@@ -19,7 +19,7 @@
                     }
                 </select>
             </label>
-            <label>Month<input type="month" @bind="period" /></label>
+            <label>Month<input type="month" value="@period" @onchange="SetPeriod" /></label>
             <label>Allowance (₱)<input type="number" step="0.01" min="0" @bind="allowance" /></label>
             <label>Late minutes<input type="number" step="1" min="0" @bind="lateMin" /></label>
             <label>Absent days<input type="number" step="1" min="0" @bind="absentDays" /></label>
@@ -112,6 +112,8 @@
         var now = await Svc.NowAsync();
         period = now.ToString("yyyy-MM");
     }
+
+    void SetPeriod(ChangeEventArgs e) => period = e.Value?.ToString() ?? "";
 
     async Task FillFromAttendance()
     {
