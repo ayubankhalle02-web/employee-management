@@ -24,7 +24,7 @@
         <p>Punching as <strong>@Svc.OwnName()</strong></p>
     }
 
-    <h3>Photo proof (optional)</h3>
+    <h3>Photo proof <span class="req">(required to punch in)</span></h3>
     <div class="photo-box">
         <video id="cam" autoplay playsinline muted class="@(cameraOn ? "" : "hidden")"></video>
         @if (!string.IsNullOrEmpty(photo))
@@ -52,7 +52,7 @@
     </div>
 
     <div class="actions">
-        <button class="btn" @onclick="PunchIn">PUNCH IN</button>
+        <button class="btn" @onclick="PunchIn" disabled="@(string.IsNullOrEmpty(photo))" title="A photo is required to punch in">PUNCH IN</button>
         <button class="btn" @onclick="PunchOut">PUNCH OUT</button>
     </div>
     <Alert Message="@msg" Ok="ok" />

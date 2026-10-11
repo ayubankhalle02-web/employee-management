@@ -208,6 +208,9 @@ public class EmsService
         var emp = ResolveTarget(empNo, out var error);
         if (emp == null) return Result.Fail(error);
 
+        if (string.IsNullOrWhiteSpace(photo))
+            return Result.Fail("Photo proof is required. Take or upload a photo before punching in.");
+
         var now = await NowAsync();
         var key = DateKey(now);
         if (Data.Attendance.Any(a => a.EmployeeId == emp.Id && a.Date == key))
