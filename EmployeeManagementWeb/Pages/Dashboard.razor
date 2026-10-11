@@ -1,0 +1,44 @@
+@page "/"
+@inject EmsService Svc
+@inject AuthService Auth
+
+<h1>Dashboard</h1>
+
+@if (stats == null)
+{
+    <p class="muted">Loading…</p>
+}
+else
+{
+    <div class="cards">
+        @if (Auth.IsAdmin)
+        {
+            <div class="stat"><span>ACTIVE EMPLOYEES</span><b>@stats.ActiveEmployees</b></div>
+            <div class="stat"><span>TODAY'S ATTENDANCE</span><b>@stats.TodayAttendance</b></div>
+            <div class="stat"><span>PENDING REQUESTS</span><b>@stats.PendingRequests</b></div>
+        }
+        else
+        {
+            <div class="stat"><span>MY ATTENDANCE TODAY</span><b class="small">@stats.MyStatus</b></div>
+            <div class="stat"><span>MY PENDING REQUESTS</span><b>@stats.PendingRequests</b></div>
+        }
+    </div>
+
+    <h2>Welcome, @(Auth.Current?.Username)!</h2>
+    <p>
+        @if (Auth.IsAdmin)
+        {
+            <text>Use the menu to manage employees, attendance, payroll, accounts and service requests.</text>
+        }
+        else
+        {
+            <text>Use the menu to punch in/out, view your salary records and send service requests.</text>
+        }
+    </p>
+}
+
+@code {
+    DashboardStats? stats;
+
+    protected override async Task OnInitializedAsync() => stats = await Svc.GetDashboardAsync();
+}

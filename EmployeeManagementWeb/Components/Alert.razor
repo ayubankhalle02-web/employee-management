@@ -1,0 +1,9 @@
+@if (!string.IsNullOrEmpty(Message))
+{
+    <div class="alert @(Ok ? "ok" : "err")">@Message</div>
+}
+
+@code {
+    [Parameter] public string? Message { get; set; }
+    [Parameter] public bool Ok { get; set; }
+}

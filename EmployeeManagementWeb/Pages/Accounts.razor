@@ -1,0 +1,106 @@
+@page "/accounts"
+@inject EmsService Svc
+@inject AuthService Auth
+@inject IJSRuntime JS
+
+<h1>Account Management</h1>
+
+@if (!Auth.IsAdmin)
+{
+    <p class="muted">You do not have access to this page.</p>
+}
+else
+{
+    <div class="card">
+        <h2>Create account</h2>
+        <div class="grid3">
+            <label>Username<input @bind="username" @bind:event="oninput" autocomplete="off" /></label>
+            <label>Password (min. 6 characters)<input type="password" @bind="password" @bind:event="oninput" autocomplete="new-password" /></label>
+            <label>Role
+                <select @bind="role">
+                    <option value="Admin">Admin</option>
+                    <option value="Employee">Employee</option>
+                    @if (Auth.IsOwner)
+                    {
+                        <option value="Owner">Owner</option>
+                    }
+                </select>
+            </label>
+            @if (role == "Employee")
+            {
+                <label>Employee
+                    <select @bind="employeeId">
+                        <option value="0">-- select employee --</option>
+                        @foreach (var e in Svc.ListEmployees().OrderBy(x => x.EmployeeNo))
+                        {
+                            <option value="@e.Id">@e.EmployeeNo - @e.FullName</option>
+                        }
+                    </select>
+                </label>
+            }
+        </div>
+        <div class="actions">
+            <button class="btn" @onclick="Create">CREATE ACCOUNT</button>
+        </div>
+        <Alert Message="@msg" Ok="ok" />
+    </div>
+
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>Username</th><th>Role</th><th>Linked employee</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var u in Svc.ListUsers())
+                {
+                    <tr>
+                        <td>@u.Username</td>
+                        <td>@u.Role</td>
+                        <td>@(u.EmployeeId is int id ? Svc.EmployeeName(id) : "-")</td>
+                        <td class="row-actions">
+                            <button class="btn small secondary" @onclick="() => Reset(u)">Reset password</button>
+                            <button class="btn small danger" @onclick="() => Remove(u)">Delete</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    string username = "";
+    string password = "";
+    string role = "Admin";
+    int employeeId;
+    string? msg;
+    bool ok;
+
+    async Task Create()
+    {
+        var r = await Svc.CreateAccountAsync(username, password, role, employeeId);
+        msg = r.Message;
+        ok = r.Ok;
+        if (r.Ok)
+        {
+            username = "";
+            password = "";
+            employeeId = 0;
+        }
+    }
+
+    async Task Reset(User u)
+    {
+        var pw = await JS.InvokeAsync<string?>("prompt", $"New password for {u.Username} (min. 6 characters):");
+        if (pw == null) return;
+        var r = await Svc.ResetPasswordAsync(u.Id, pw);
+        msg = r.Message;
+        ok = r.Ok;
+    }
+
+    async Task Remove(User u)
+    {
+        if (!await JS.InvokeAsync<bool>("confirm", $"Delete the account '{u.Username}'?")) return;
+        var r = await Svc.DeleteUserAsync(u.Id);
+        msg = r.Message;
+        ok = r.Ok;
+    }
+}

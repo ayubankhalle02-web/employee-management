@@ -1,0 +1,100 @@
+@page "/self-service"
+@inject EmsService Svc
+@inject AuthService Auth
+
+<h1>Self-Service Portal</h1>
+
+@if (emp == null)
+{
+    <p class="muted">This account is not linked to an employee record.</p>
+}
+else
+{
+    <div class="card">
+        <h2>My information</h2>
+        <div class="grid3">
+            <label>Employee No.<input value="@emp.EmployeeNo" readonly /></label>
+            <label>Full Name<input value="@emp.FullName" readonly /></label>
+            <label>Position<input value="@emp.Position" readonly /></label>
+            <label>Date Hired<input value="@emp.DateHired" readonly /></label>
+            <label>Basic Salary<input value="@SalaryText" readonly /></label>
+            <label>Status<input value="@emp.Status" readonly /></label>
+            <label>Phone<input @bind="phone" @bind:event="oninput" /></label>
+            <label>Address<input @bind="address" @bind:event="oninput" /></label>
+        </div>
+        <div class="actions">
+            <button class="btn" @onclick="SaveContact">SAVE CONTACT DETAILS</button>
+        </div>
+        <Alert Message="@contactMsg" Ok="contactOk" />
+    </div>
+
+    <div class="card">
+        <h2>Request a service</h2>
+        <div class="grid2">
+            <label>Type
+                <select @bind="type">
+                    @foreach (var t in EmsService.RequestTypes)
+                    {
+                        <option value="@t">@t</option>
+                    }
+                </select>
+            </label>
+            <label>Details<input @bind="details" @bind:event="oninput" maxlength="500" /></label>
+        </div>
+        <div class="actions">
+            <button class="btn" @onclick="Submit">SUBMIT REQUEST</button>
+        </div>
+        <Alert Message="@reqMsg" Ok="reqOk" />
+    </div>
+
+    <h2>My requests</h2>
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>Date</th><th>Type</th><th>Details</th><th>Status</th></tr></thead>
+            <tbody>
+                @foreach (var r in Svc.ListRequests())
+                {
+                    <tr>
+                        <td>@r.RequestDate.ToString("yyyy-MM-dd HH:mm")</td>
+                        <td>@r.RequestType</td>
+                        <td class="wrap">@r.Details</td>
+                        <td><span class="badge @r.Status.ToLowerInvariant()">@r.Status</span></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    Employee? emp;
+    string SalaryText => emp == null ? "" : "₱" + emp.BasicSalary.ToString("N2");
+    string phone = "";
+    string address = "";
+    string type = EmsService.RequestTypes[0];
+    string details = "";
+    string? contactMsg, reqMsg;
+    bool contactOk, reqOk;
+
+    protected override void OnInitialized()
+    {
+        emp = Auth.EmployeeId is int id ? Svc.GetEmployee(id) : null;
+        phone = emp?.Phone ?? "";
+        address = emp?.Address ?? "";
+    }
+
+    async Task SaveContact()
+    {
+        var r = await Svc.UpdateOwnContactAsync(phone, address);
+        contactMsg = r.Message;
+        contactOk = r.Ok;
+    }
+
+    async Task Submit()
+    {
+        var r = await Svc.SubmitRequestAsync(type, details);
+        reqMsg = r.Message;
+        reqOk = r.Ok;
+        if (r.Ok) details = "";
+    }
+}

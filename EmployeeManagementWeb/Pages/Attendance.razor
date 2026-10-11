@@ -1,0 +1,164 @@
+@page "/attendance"
+@implements IAsyncDisposable
+@inject EmsService Svc
+@inject AuthService Auth
+@inject IJSRuntime JS
+
+<h1>Attendance &amp; Time Stamp</h1>
+
+<div class="card">
+    @if (Auth.IsAdmin)
+    {
+        <label>Employee
+            <select @bind="empNo">
+                <option value="">-- select employee --</option>
+                @foreach (var e in Svc.ListEmployees().Where(x => x.Status == "Active").OrderBy(x => x.EmployeeNo))
+                {
+                    <option value="@e.EmployeeNo">@e.EmployeeNo - @e.FullName</option>
+                }
+            </select>
+        </label>
+    }
+    else
+    {
+        <p>Punching as <strong>@Svc.OwnName()</strong></p>
+    }
+
+    <h3>Photo proof (optional)</h3>
+    <div class="photo-box">
+        <video id="cam" autoplay playsinline muted class="@(cameraOn ? "" : "hidden")"></video>
+        @if (!string.IsNullOrEmpty(photo))
+        {
+            <img class="preview" src="@photo" alt="Captured photo" />
+        }
+    </div>
+    <div class="actions">
+        @if (!cameraOn)
+        {
+            <button class="btn secondary" @onclick="StartCamera">START CAMERA</button>
+        }
+        else
+        {
+            <button class="btn secondary" @onclick="TakePhoto">TAKE PHOTO</button>
+            <button class="btn secondary" @onclick="StopCamera">STOP CAMERA</button>
+        }
+        <label class="file-btn">UPLOAD PHOTO
+            <input type="file" id="photoFile" accept="image/*" @onchange="OnFile" />
+        </label>
+        @if (!string.IsNullOrEmpty(photo))
+        {
+            <button class="btn secondary" @onclick="ClearPhoto">REMOVE PHOTO</button>
+        }
+    </div>
+
+    <div class="actions">
+        <button class="btn" @onclick="PunchIn">PUNCH IN</button>
+        <button class="btn" @onclick="PunchOut">PUNCH OUT</button>
+    </div>
+    <Alert Message="@msg" Ok="ok" />
+</div>
+
+<div class="table-wrap">
+    <table>
+        <thead>
+            <tr><th>No.</th><th>Name</th><th>Date</th><th>Time In</th><th>Time Out</th><th class="num">Hours</th><th>Photo</th></tr>
+        </thead>
+        <tbody>
+            @foreach (var a in Svc.ListAttendance())
+            {
+                <tr>
+                    <td>@Svc.EmployeeNoOf(a.EmployeeId)</td>
+                    <td>@Svc.EmployeeName(a.EmployeeId)</td>
+                    <td>@a.Date</td>
+                    <td>@(a.TimeIn?.ToString("hh:mm:ss tt") ?? "-")</td>
+                    <td>@(a.TimeOut?.ToString("hh:mm:ss tt") ?? "-")</td>
+                    <td class="num">@(a.TimeIn != null && a.TimeOut != null ? (a.TimeOut.Value - a.TimeIn.Value).TotalHours.ToString("0.00") : "-")</td>
+                    <td>
+                        @if (!string.IsNullOrEmpty(a.Photo))
+                        {
+                            <img class="thumb" src="@a.Photo" alt="Photo proof" @onclick="() => viewPhoto = a.Photo" />
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@if (viewPhoto != null)
+{
+    <div class="modal" @onclick="() => viewPhoto = null">
+        <img src="@viewPhoto" alt="Photo proof" />
+    </div>
+}
+
+@code {
+    string empNo = "";
+    string photo = "";
+    string? viewPhoto;
+    bool cameraOn;
+    string? msg;
+    bool ok;
+
+    async Task StartCamera()
+    {
+        cameraOn = await JS.InvokeAsync<bool>("ems.startCamera", "cam");
+        if (!cameraOn)
+        {
+            msg = "Camera is not available (or permission was denied). You can upload a photo instead.";
+            ok = false;
+        }
+    }
+
+    async Task StopCamera()
+    {
+        await JS.InvokeVoidAsync("ems.stopCamera", "cam");
+        cameraOn = false;
+    }
+
+    async Task TakePhoto()
+    {
+        photo = await JS.InvokeAsync<string>("ems.capture", "cam", 480);
+        if (string.IsNullOrEmpty(photo))
+        {
+            msg = "Could not capture a photo. Wait for the camera to finish starting and try again.";
+            ok = false;
+        }
+        else
+        {
+            await StopCamera();
+        }
+    }
+
+    async Task OnFile(ChangeEventArgs _)
+    {
+        photo = await JS.InvokeAsync<string>("ems.fileToDataUrl", "photoFile", 480);
+    }
+
+    void ClearPhoto() => photo = "";
+
+    async Task PunchIn()
+    {
+        var r = await Svc.PunchInAsync(empNo, photo);
+        msg = r.Message;
+        ok = r.Ok;
+        if (r.Ok)
+        {
+            photo = "";
+            if (cameraOn) await StopCamera();
+        }
+    }
+
+    async Task PunchOut()
+    {
+        var r = await Svc.PunchOutAsync(empNo);
+        msg = r.Message;
+        ok = r.Ok;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try { await JS.InvokeVoidAsync("ems.stopCamera", "cam"); }
+        catch { /* page is being torn down */ }
+    }
+}

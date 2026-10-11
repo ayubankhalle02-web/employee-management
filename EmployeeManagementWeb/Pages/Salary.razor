@@ -1,0 +1,150 @@
+@page "/salary"
+@inject EmsService Svc
+@inject AuthService Auth
+@inject IJSRuntime JS
+
+<h1>@(Auth.IsAdmin ? "Salary Monitoring" : "My Salary")</h1>
+
+@if (Auth.IsAdmin)
+{
+    <div class="card">
+        <h2>Compute payroll</h2>
+        <div class="grid3">
+            <label>Employee
+                <select @bind="empId">
+                    <option value="0">-- select employee --</option>
+                    @foreach (var e in Svc.ListEmployees().Where(x => x.Status == "Active").OrderBy(x => x.EmployeeNo))
+                    {
+                        <option value="@e.Id">@e.EmployeeNo - @e.FullName</option>
+                    }
+                </select>
+            </label>
+            <label>Month<input type="month" @bind="period" /></label>
+            <label>Allowance (₱)<input type="number" step="0.01" min="0" @bind="allowance" /></label>
+            <label>Late minutes<input type="number" step="1" min="0" @bind="lateMin" /></label>
+            <label>Absent days<input type="number" step="1" min="0" @bind="absentDays" /></label>
+            <label>Overtime hours<input type="number" step="0.25" min="0" @bind="otHours" /></label>
+        </div>
+
+        <div class="actions">
+            <button class="btn secondary" @onclick="FillFromAttendance">FILL FROM ATTENDANCE</button>
+            <button class="btn" @onclick="Save">CALCULATE &amp; SAVE</button>
+        </div>
+
+        @if (SelectedEmp != null && Calc != null)
+        {
+            <table class="breakdown">
+                <tr><td>Basic salary</td><td class="num">₱@SelectedEmp.BasicSalary.ToString("N2")</td></tr>
+                <tr><td>+ Overtime (@otHours h)</td><td class="num">₱@Calc.Overtime.ToString("N2")</td></tr>
+                <tr><td>+ Allowance</td><td class="num">₱@allowance.ToString("N2")</td></tr>
+                <tr><td>− Late (@lateMin min)</td><td class="num">₱@Calc.LateDeduction.ToString("N2")</td></tr>
+                <tr><td>− Absences (@absentDays day/s)</td><td class="num">₱@Calc.AbsenceDeduction.ToString("N2")</td></tr>
+                <tr class="total"><td>Net salary</td><td class="num">₱@Net.ToString("N2")</td></tr>
+            </table>
+            <p class="muted">
+                Daily rate = basic ÷ @(EmsService.WorkDaysPerMonth) = ₱@(Calc.DailyRate.ToString("N2")).
+                Late = after @(ShiftText(EmsService.ShiftStart)). Overtime = after @(ShiftText(EmsService.ShiftEnd)),
+                paid at @(EmsService.OvertimeMultiplier)x. Absent = a Mon–Sat day with no attendance record
+                (holidays and approved leave are not detected, so adjust the numbers above if needed).
+            </p>
+        }
+        <Alert Message="@msg" Ok="ok" />
+    </div>
+}
+
+<div class="table-wrap">
+    <table>
+        <thead>
+            <tr>
+                <th>Month</th><th>No.</th><th>Name</th>
+                <th class="num">Basic</th><th class="num">Overtime</th><th class="num">Allowance</th>
+                <th class="num">Late</th><th class="num">Absence</th><th class="num">Net Salary</th>
+                @if (Auth.IsAdmin) { <th></th> }
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var s in Svc.ListSalary())
+            {
+                <tr>
+                    <td>@s.Period</td>
+                    <td>@Svc.EmployeeNoOf(s.EmployeeId)</td>
+                    <td>@Svc.EmployeeName(s.EmployeeId)</td>
+                    <td class="num">@s.Basic.ToString("N2")</td>
+                    <td class="num">@s.Overtime.ToString("N2")</td>
+                    <td class="num">@s.Allowance.ToString("N2")</td>
+                    <td class="num">@s.LateDeduction.ToString("N2")</td>
+                    <td class="num">@s.AbsenceDeduction.ToString("N2")</td>
+                    <td class="num"><strong>₱@s.Net.ToString("N2")</strong></td>
+                    @if (Auth.IsAdmin)
+                    {
+                        <td class="row-actions"><button class="btn small danger" @onclick="() => Remove(s)">Delete</button></td>
+                    }
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    int empId;
+    string period = "";
+    decimal allowance;
+    int lateMin;
+    int absentDays;
+    decimal otHours;
+    string? msg;
+    bool ok;
+
+    static string ShiftText(TimeSpan t) => DateTime.Today.Add(t).ToString("h:mm tt");
+
+    Employee? SelectedEmp => Svc.GetEmployee(empId);
+
+    SalaryAmounts? Calc => SelectedEmp is Employee e
+        ? EmsService.CalculateAmounts(e.BasicSalary, lateMin, absentDays, otHours)
+        : null;
+
+    decimal Net => SelectedEmp is Employee e && Calc is SalaryAmounts c
+        ? e.BasicSalary + c.Overtime + allowance - c.LateDeduction - c.AbsenceDeduction
+        : 0m;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var now = await Svc.NowAsync();
+        period = now.ToString("yyyy-MM");
+    }
+
+    async Task FillFromAttendance()
+    {
+        if (empId == 0) { msg = "Please choose an employee first."; ok = false; return; }
+        var now = await Svc.NowAsync();
+        var s = Svc.Summarize(empId, period, now);
+        lateMin = s.LateMinutes;
+        absentDays = s.AbsentDays;
+        otHours = s.OvertimeHours;
+        msg = "Filled from attendance records. You can still adjust the numbers.";
+        ok = true;
+    }
+
+    async Task Save()
+    {
+        var r = await Svc.SaveSalaryAsync(new SalaryRecord
+        {
+            EmployeeId = empId,
+            Period = period,
+            Allowance = allowance,
+            LateMinutes = lateMin,
+            AbsentDays = absentDays,
+            OvertimeHours = otHours
+        });
+        msg = r.Message;
+        ok = r.Ok;
+    }
+
+    async Task Remove(SalaryRecord s)
+    {
+        if (!await JS.InvokeAsync<bool>("confirm", "Delete this payroll record?")) return;
+        var r = await Svc.DeleteSalaryAsync(s.Id);
+        msg = r.Message;
+        ok = r.Ok;
+    }
+}
