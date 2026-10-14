@@ -6,6 +6,14 @@ window.ems = {
   sset: function (k, v) { try { sessionStorage.setItem(k, v); } catch (e) { } },
   sremove: function (k) { try { sessionStorage.removeItem(k); } catch (e) { } },
 
+  getTheme: function () { return document.documentElement.getAttribute("data-theme") || "light"; },
+  toggleTheme: function () {
+    var next = window.ems.getTheme() === "dark" ? "light" : "dark";
+    document.documentElement.setAttribute("data-theme", next);
+    try { localStorage.setItem("ems.theme", next); } catch (e) { }
+    return next;
+  },
+
   // Browser-local "now" as yyyy-MM-ddTHH:mm:ss (Blazor WASM's DateTime.Now is UTC).
   now: function () {
     var d = new Date();

@@ -1,6 +1,7 @@
 @inherits LayoutComponentBase
 @inject AuthService Auth
 @inject NavigationManager Nav
+@inject IJSRuntime JS
 
 @if (!ready)
 {
@@ -34,6 +35,7 @@ else if (Auth.IsLoggedIn)
 
         <div class="main">
             <header class="topbar">
+                <button class="theme-btn" @onclick="ToggleTheme" title="Switch light / dark mode">@(dark ? "☀️" : "🌙")</button>
                 <div class="user-chip">
                     <span class="avatar">@Initial</span>
                     <div><strong>@(Auth.Current?.Username)</strong><small>@(Auth.Current?.Role)</small></div>
@@ -48,14 +50,21 @@ else if (Auth.IsLoggedIn)
 
 @code {
     bool ready;
+    bool dark;
 
     string Initial => string.IsNullOrEmpty(Auth.Current?.Username) ? "?" : Auth.Current!.Username.Substring(0, 1).ToUpperInvariant();
 
     protected override async Task OnInitializedAsync()
     {
         await Auth.RestoreAsync();
+        dark = await JS.InvokeAsync<string>("ems.getTheme") == "dark";
         ready = true;
         if (!Auth.IsLoggedIn) Nav.NavigateTo("login");
+    }
+
+    async Task ToggleTheme()
+    {
+        dark = await JS.InvokeAsync<string>("ems.toggleTheme") == "dark";
     }
 
     async Task Logout()
