@@ -10,31 +10,34 @@ else if (Auth.IsLoggedIn)
 {
     <div class="shell">
         <aside class="sidebar">
-            <div class="brand">EMPLOYEE<br />MANAGEMENT</div>
+            <div class="brand"><span class="brand-logo">🏢</span><span>EMPLOYEE<br />MANAGEMENT</span></div>
             <nav>
-                <NavLink class="nav-item" href="" Match="NavLinkMatch.All">Dashboard</NavLink>
+                <NavLink class="nav-item" href="" Match="NavLinkMatch.All"><span class="ico">🏠</span>Dashboard</NavLink>
                 @if (Auth.IsAdmin)
                 {
-                    <NavLink class="nav-item" href="employees">Employees</NavLink>
+                    <NavLink class="nav-item" href="employees"><span class="ico">👥</span>Employees</NavLink>
                 }
-                <NavLink class="nav-item" href="attendance">Attendance</NavLink>
-                <NavLink class="nav-item" href="salary">@(Auth.IsAdmin ? "Salary Monitoring" : "My Salary")</NavLink>
+                <NavLink class="nav-item" href="attendance"><span class="ico">🕒</span>Attendance</NavLink>
+                <NavLink class="nav-item" href="salary"><span class="ico">💰</span>@(Auth.IsAdmin ? "Salary Monitoring" : "My Salary")</NavLink>
                 @if (Auth.IsAdmin)
                 {
-                    <NavLink class="nav-item" href="accounts">Account Management</NavLink>
-                    <NavLink class="nav-item" href="requests">Service Requests</NavLink>
+                    <NavLink class="nav-item" href="accounts"><span class="ico">🔑</span>Account Management</NavLink>
+                    <NavLink class="nav-item" href="requests"><span class="ico">📩</span>Service Requests</NavLink>
                 }
                 else
                 {
-                    <NavLink class="nav-item" href="self-service">Self-Service Portal</NavLink>
+                    <NavLink class="nav-item" href="self-service"><span class="ico">🙋</span>Self-Service Portal</NavLink>
                 }
             </nav>
-            <button class="btn danger logout" @onclick="Logout">LOG OUT</button>
+            <button class="btn danger logout" @onclick="Logout">🚪 LOG OUT</button>
         </aside>
 
         <div class="main">
             <header class="topbar">
-                <span class="who">@(Auth.Current?.Username) &nbsp;•&nbsp; @(Auth.Current?.Role)</span>
+                <div class="user-chip">
+                    <span class="avatar">@Initial</span>
+                    <div><strong>@(Auth.Current?.Username)</strong><small>@(Auth.Current?.Role)</small></div>
+                </div>
             </header>
             <main class="content">
                 @Body
@@ -45,6 +48,8 @@ else if (Auth.IsLoggedIn)
 
 @code {
     bool ready;
+
+    string Initial => string.IsNullOrEmpty(Auth.Current?.Username) ? "?" : Auth.Current!.Username.Substring(0, 1).ToUpperInvariant();
 
     protected override async Task OnInitializedAsync()
     {
