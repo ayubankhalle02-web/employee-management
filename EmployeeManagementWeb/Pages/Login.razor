@@ -1,9 +1,7 @@
 @page "/login"
 @layout EmptyLayout
 @inject AuthService Auth
-@inject DataStore Store
 @inject NavigationManager Nav
-@inject IJSRuntime JS
 
 <div class="login-wrap">
     <div class="login-card">
@@ -22,13 +20,6 @@
         </form>
 
         <Alert Message="@error" Ok="false" />
-
-        <div class="demo">
-            <strong>✨ Demo accounts</strong><br />
-            Owner: <code>owner</code> / <code>owner123</code><br />
-            Employee: <code>employee</code> / <code>employee123</code><br />
-            <button class="link" @onclick="ResetDemo">Reset all data to the demo defaults</button>
-        </div>
     </div>
 </div>
 
@@ -56,13 +47,5 @@
         error = "Invalid username or password.";
         password = "";
         busy = false;
-    }
-
-    async Task ResetDemo()
-    {
-        if (!await JS.InvokeAsync<bool>("confirm", "This erases ALL employees, attendance, salary and accounts in this browser. Continue?"))
-            return;
-        await Store.ResetAsync();
-        error = null;
     }
 }

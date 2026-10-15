@@ -1,0 +1,60 @@
+@inject EmsService Svc
+
+@if (Record != null)
+{
+    <div class="modal" @onclick="Close">
+        <div class="slip" @onclick="NoOp" @onclick:stopPropagation>
+            <div class="slip-head">
+                <div>
+                    <strong>PAYSLIP</strong>
+                    <small>@Record.PeriodLabel</small>
+                </div>
+                <button class="btn small secondary" @onclick="Close">Close</button>
+            </div>
+            <div class="slip-emp">
+                <b>@Svc.EmployeeName(Record.EmployeeId)</b>
+                <span>@Svc.EmployeeNoOf(Record.EmployeeId)</span>
+            </div>
+
+            <table class="breakdown full">
+                <tr class="sec"><td colspan="2">Earnings</td></tr>
+                @if (Record.Kind == "13th Month")
+                {
+                    <tr><td>13th month pay</td><td class="num">@M(Record.Basic)</td></tr>
+                }
+                else
+                {
+                    <tr><td>Basic salary</td><td class="num">@M(Record.Basic)</td></tr>
+                    @if (Record.Overtime > 0) { <tr><td>Overtime (@Record.OvertimeHours h)</td><td class="num">@M(Record.Overtime)</td></tr> }
+                    @if (Record.HolidayPay > 0) { <tr><td>Holiday pay (@Record.RegHolidayDays regular, @Record.SpecialHolidayDays special)</td><td class="num">@M(Record.HolidayPay)</td></tr> }
+                    @if (Record.NightDiffPay > 0) { <tr><td>Night differential (@Record.NightHours h)</td><td class="num">@M(Record.NightDiffPay)</td></tr> }
+                    @if (Record.LeavePay > 0) { <tr><td>Leave conversion (@Record.LeaveDays day/s)</td><td class="num">@M(Record.LeavePay)</td></tr> }
+                    @if (Record.Allowance > 0) { <tr><td>Allowance</td><td class="num">@M(Record.Allowance)</td></tr> }
+                    @if (Record.LateDeduction > 0) { <tr><td>Less: late (@Record.LateMinutes min)</td><td class="num neg">- @M(Record.LateDeduction)</td></tr> }
+                    @if (Record.AbsenceDeduction > 0) { <tr><td>Less: absences (@Record.AbsentDays day/s)</td><td class="num neg">- @M(Record.AbsenceDeduction)</td></tr> }
+                    <tr class="sub"><td>Gross pay</td><td class="num">@M(Record.Gross)</td></tr>
+                    <tr class="sec"><td colspan="2">Deductions</td></tr>
+                    <tr><td>SSS</td><td class="num neg">- @M(Record.Sss)</td></tr>
+                    <tr><td>PhilHealth</td><td class="num neg">- @M(Record.PhilHealth)</td></tr>
+                    <tr><td>Pag-IBIG</td><td class="num neg">- @M(Record.PagIbig)</td></tr>
+                }
+                @if (Record.Kind == "13th Month")
+                {
+                    <tr class="sec"><td colspan="2">Deductions</td></tr>
+                }
+                <tr><td>Withholding tax</td><td class="num neg">- @M(Record.Tax)</td></tr>
+                @if (Record.OtherDeductions > 0) { <tr><td>Other (loan / cash advance)</td><td class="num neg">- @M(Record.OtherDeductions)</td></tr> }
+                <tr class="total"><td>NET PAY</td><td class="num">@M(Record.Net)</td></tr>
+            </table>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public SalaryRecord? Record { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    Task Close() => OnClose.InvokeAsync();
+    void NoOp() { }
+    static string M(decimal d) => "₱" + d.ToString("N2");
+}

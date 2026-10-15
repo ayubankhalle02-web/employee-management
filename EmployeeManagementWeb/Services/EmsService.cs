@@ -13,9 +13,6 @@ public record Result(bool Ok, string Message)
 /// <summary>What the attendance records say about one employee in one month.</summary>
 public record AttendanceSummary(int LateMinutes, int AbsentDays, decimal OvertimeHours);
 
-/// <summary>Peso amounts derived from the attendance summary.</summary>
-public record SalaryAmounts(decimal DailyRate, decimal Overtime, decimal LateDeduction, decimal AbsenceDeduction);
-
 public record DashboardStats(int ActiveEmployees, int TodayAttendance, int PendingRequests, string? MyStatus);
 
 /// <summary>
@@ -295,54 +292,63 @@ public class EmsService
         return new AttendanceSummary(lateMinutes, absent, Math.Round((decimal)otHours, 2));
     }
 
-    public static SalaryAmounts CalculateAmounts(decimal basic, int lateMinutes, int absentDays, decimal overtimeHours)
-    {
-        var daily = Math.Round(basic / WorkDaysPerMonth, 2);
-        var hourly = daily / HoursPerDay;
-        return new SalaryAmounts(
-            daily,
-            Math.Round(overtimeHours * hourly * OvertimeMultiplier, 2),
-            Math.Round(lateMinutes * hourly / 60m, 2),
-            Math.Round(absentDays * daily, 2));
-    }
-
-    /// <summary>Saves a payroll record. One record per employee per month (saving again replaces it).</summary>
-    public async Task<Result> SaveSalaryAsync(SalaryRecord input)
+    /// <summary>Saves one month of payroll. One record per employee per month (saving again replaces it).</summary>
+    public async Task<Result> SaveSalaryAsync(int employeeId, string period, PayrollInput input)
     {
         if (!auth.IsAdmin) return Denied();
 
-        var emp = GetEmployee(input.EmployeeId);
+        var emp = GetEmployee(employeeId);
         if (emp == null) return Result.Fail("Please choose an employee.");
-        if (!DateTime.TryParseExact((input.Period ?? "") + "-01", "yyyy-MM-dd", Inv, DateTimeStyles.None, out _))
+        if (!DateTime.TryParseExact((period ?? "") + "-01", "yyyy-MM-dd", Inv, DateTimeStyles.None, out _))
             return Result.Fail("Please choose a valid month.");
-        if (input.Allowance < 0 || input.LateMinutes < 0 || input.AbsentDays < 0 || input.OvertimeHours < 0)
+        if (input.Allowance < 0 || input.LateMinutes < 0 || input.AbsentDays < 0 || input.OvertimeHours < 0 ||
+            input.RegHolidayDays < 0 || input.SpecialHolidayDays < 0 || input.NightHours < 0 ||
+            input.LeaveDays < 0 || input.OtherDeductions < 0)
             return Result.Fail("Values cannot be negative.");
 
-        var amt = CalculateAmounts(emp.BasicSalary, input.LateMinutes, input.AbsentDays, input.OvertimeHours);
-        var allowance = Math.Round(input.Allowance, 2);
-        var net = emp.BasicSalary + amt.Overtime + allowance - amt.LateDeduction - amt.AbsenceDeduction;
-        if (net < 0) return Result.Fail("Deductions are larger than the pay. Please check the values.");
+        var calc = PayrollCalculator.Compute(emp.BasicSalary, input);
+        if (calc.Net < 0) return Result.Fail("Deductions are larger than the pay. Please check the values.");
 
-        var rec = Data.Salaries.FirstOrDefault(s => s.EmployeeId == emp.Id && s.Period == input.Period);
-        var isNew = rec == null;
-        if (rec == null)
-        {
-            rec = new SalaryRecord { Id = NextId(Data.Salaries.Select(s => s.Id)), EmployeeId = emp.Id, Period = input.Period! };
-            Data.Salaries.Add(rec);
-        }
-
-        rec.Basic = emp.BasicSalary;
-        rec.Overtime = amt.Overtime;
-        rec.Allowance = allowance;
-        rec.LateDeduction = amt.LateDeduction;
-        rec.AbsenceDeduction = amt.AbsenceDeduction;
-        rec.Net = net;
-        rec.LateMinutes = input.LateMinutes;
-        rec.AbsentDays = input.AbsentDays;
-        rec.OvertimeHours = input.OvertimeHours;
+        var existing = Data.Salaries.FirstOrDefault(s => s.EmployeeId == emp.Id && s.Period == period && s.Kind == "Monthly");
+        var rec = PayrollCalculator.BuildRecord(existing?.Id ?? NextId(Data.Salaries.Select(s => s.Id)), emp, period!, input);
+        if (existing != null) Data.Salaries[Data.Salaries.IndexOf(existing)] = rec;
+        else Data.Salaries.Add(rec);
 
         await store.SaveAsync();
-        return Result.Success($"{(isNew ? "Saved" : "Updated")} payroll for {emp.FullName} ({input.Period}). Net: ₱{net:N2}");
+        return Result.Success($"{(existing == null ? "Saved" : "Updated")} payroll for {emp.FullName} ({period}). Net pay: ₱{calc.Net:N2}");
+    }
+
+    /// <summary>13th month pay = total basic salary earned in the year / 12, from the saved monthly payrolls.</summary>
+    public async Task<Result> Save13thMonthAsync(int employeeId, int year)
+    {
+        if (!auth.IsAdmin) return Denied();
+
+        var emp = GetEmployee(employeeId);
+        if (emp == null) return Result.Fail("Please choose an employee.");
+
+        var prefix = year.ToString(Inv) + "-";
+        var months = Data.Salaries
+            .Where(s => s.EmployeeId == emp.Id && s.Kind == "Monthly" && s.Period.StartsWith(prefix))
+            .ToList();
+        if (months.Count == 0) return Result.Fail($"No saved monthly payroll for {year} yet. Save the monthly payroll first.");
+
+        var earned = months.Sum(s => s.Basic - s.LateDeduction - s.AbsenceDeduction);
+        var amount = PayrollCalculator.Round(earned / 12m);
+        var tax = PayrollCalculator.ThirteenthMonthTax(amount, emp.BasicSalary);
+        var period = prefix + "13";
+
+        var existing = Data.Salaries.FirstOrDefault(s => s.EmployeeId == emp.Id && s.Period == period && s.Kind == "13th Month");
+        var rec = new SalaryRecord
+        {
+            Id = existing?.Id ?? NextId(Data.Salaries.Select(s => s.Id)),
+            EmployeeId = emp.Id, Period = period, Kind = "13th Month",
+            Basic = amount, Tax = tax, Net = amount - tax
+        };
+        if (existing != null) Data.Salaries[Data.Salaries.IndexOf(existing)] = rec;
+        else Data.Salaries.Add(rec);
+
+        await store.SaveAsync();
+        return Result.Success($"13th month pay for {emp.FullName} ({year}, from {months.Count} saved month/s): ₱{rec.Net:N2}");
     }
 
     public async Task<Result> DeleteSalaryAsync(int id)

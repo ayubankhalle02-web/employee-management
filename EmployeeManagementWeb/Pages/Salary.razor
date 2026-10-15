@@ -24,28 +24,48 @@
             <label>Late minutes<input type="number" step="1" min="0" @bind="lateMin" /></label>
             <label>Absent days<input type="number" step="1" min="0" @bind="absentDays" /></label>
             <label>Overtime hours<input type="number" step="0.25" min="0" @bind="otHours" /></label>
+            <label>Regular holidays worked (days)<input type="number" step="1" min="0" @bind="regHol" /></label>
+            <label>Special holidays worked (days)<input type="number" step="1" min="0" @bind="specHol" /></label>
+            <label>Night shift hours (10 PM - 6 AM)<input type="number" step="0.25" min="0" @bind="nightHours" /></label>
+            <label>Unused leave converted (days)<input type="number" step="1" min="0" @bind="leaveDays" /></label>
+            <label>Other deductions (loan / cash advance ₱)<input type="number" step="0.01" min="0" @bind="otherDed" /></label>
         </div>
 
         <div class="actions">
             <button class="btn secondary" @onclick="FillFromAttendance">FILL FROM ATTENDANCE</button>
             <button class="btn" @onclick="Save">CALCULATE &amp; SAVE</button>
+            <button class="btn secondary" @onclick="Compute13th" title="Total basic earned in the year / 12, from the saved monthly payrolls">COMPUTE 13TH MONTH</button>
         </div>
 
         @if (SelectedEmp != null && Calc != null)
         {
+            var c = Calc!;
             <table class="breakdown">
-                <tr><td>Basic salary</td><td class="num">₱@SelectedEmp.BasicSalary.ToString("N2")</td></tr>
-                <tr><td>+ Overtime (@otHours h)</td><td class="num">₱@Calc.Overtime.ToString("N2")</td></tr>
-                <tr><td>+ Allowance</td><td class="num">₱@allowance.ToString("N2")</td></tr>
-                <tr><td>− Late (@lateMin min)</td><td class="num">₱@Calc.LateDeduction.ToString("N2")</td></tr>
-                <tr><td>− Absences (@absentDays day/s)</td><td class="num">₱@Calc.AbsenceDeduction.ToString("N2")</td></tr>
-                <tr class="total"><td>Net salary</td><td class="num">₱@Net.ToString("N2")</td></tr>
+                <tr class="sec"><td colspan="2">Earnings</td></tr>
+                <tr><td>Basic salary</td><td class="num">@M(SelectedEmp.BasicSalary)</td></tr>
+                @if (c.Overtime > 0) { <tr><td>Overtime (@otHours h)</td><td class="num">@M(c.Overtime)</td></tr> }
+                @if (c.HolidayPay > 0) { <tr><td>Holiday pay</td><td class="num">@M(c.HolidayPay)</td></tr> }
+                @if (c.NightDiff > 0) { <tr><td>Night differential</td><td class="num">@M(c.NightDiff)</td></tr> }
+                @if (c.LeavePay > 0) { <tr><td>Leave conversion</td><td class="num">@M(c.LeavePay)</td></tr> }
+                <tr><td>Allowance</td><td class="num">@M(c.Allowance)</td></tr>
+                @if (c.Late > 0) { <tr><td>Less: late (@lateMin min)</td><td class="num neg">- @M(c.Late)</td></tr> }
+                @if (c.Absence > 0) { <tr><td>Less: absences (@absentDays day/s)</td><td class="num neg">- @M(c.Absence)</td></tr> }
+                <tr class="sub"><td>Gross pay</td><td class="num">@M(c.Gross)</td></tr>
+                <tr class="sec"><td colspan="2">Deductions</td></tr>
+                <tr><td>SSS (5% of salary credit)</td><td class="num neg">- @M(c.Sss)</td></tr>
+                <tr><td>PhilHealth (2.5%)</td><td class="num neg">- @M(c.PhilHealth)</td></tr>
+                <tr><td>Pag-IBIG (2%, max ₱200)</td><td class="num neg">- @M(c.PagIbig)</td></tr>
+                <tr><td>Withholding tax</td><td class="num neg">- @M(c.Tax)</td></tr>
+                @if (c.Other > 0) { <tr><td>Other (loan / cash advance)</td><td class="num neg">- @M(c.Other)</td></tr> }
+                <tr class="total"><td>NET PAY</td><td class="num">@M(c.Net)</td></tr>
             </table>
-            <p class="muted">
-                Daily rate = basic ÷ @(EmsService.WorkDaysPerMonth) = ₱@(Calc.DailyRate.ToString("N2")).
-                Late = after @(ShiftText(EmsService.ShiftStart)). Overtime = after @(ShiftText(EmsService.ShiftEnd)),
-                paid at @(EmsService.OvertimeMultiplier)x. Absent = a Mon–Sat day with no attendance record
-                (holidays and approved leave are not detected, so adjust the numbers above if needed).
+            <p class="muted small-note">
+                Daily rate = basic ÷ @(EmsService.WorkDaysPerMonth) = @M(c.DailyRate). Late = after @(ShiftText(EmsService.ShiftStart)).
+                Overtime = after @(ShiftText(EmsService.ShiftEnd)) at @(EmsService.OvertimeMultiplier)x.
+                Regular holiday worked = +100% of the daily rate, special day = +30%, night differential = +10% of the hourly rate.
+                Absent = a Mon-Sat day with no attendance record (approved leave and holidays are not detected, so adjust the numbers if needed).
+                SSS, PhilHealth and Pag-IBIG are the employee shares (2026 rates). Withholding tax = the TRAIN-law tax on the
+                month's taxable pay (gross minus the three contributions), annualised and divided by 12. Allowances are treated as taxable.
             </p>
         }
         <Alert Message="@msg" Ok="ok" />
@@ -56,34 +76,39 @@
     <table>
         <thead>
             <tr>
-                <th>Month</th><th>No.</th><th>Name</th>
-                <th class="num">Basic</th><th class="num">Overtime</th><th class="num">Allowance</th>
-                <th class="num">Late</th><th class="num">Absence</th><th class="num">Net Salary</th>
-                @if (Auth.IsAdmin) { <th></th> }
+                <th>Period</th><th>No.</th><th>Name</th>
+                <th class="num">Gross</th><th class="num">SSS</th><th class="num">PhilHealth</th><th class="num">Pag-IBIG</th>
+                <th class="num">Tax</th><th class="num">Other</th><th class="num">Net pay</th><th></th>
             </tr>
         </thead>
         <tbody>
             @foreach (var s in Svc.ListSalary())
             {
                 <tr>
-                    <td>@s.Period</td>
+                    <td>@s.PeriodLabel</td>
                     <td>@Svc.EmployeeNoOf(s.EmployeeId)</td>
                     <td>@Svc.EmployeeName(s.EmployeeId)</td>
-                    <td class="num">@s.Basic.ToString("N2")</td>
-                    <td class="num">@s.Overtime.ToString("N2")</td>
-                    <td class="num">@s.Allowance.ToString("N2")</td>
-                    <td class="num">@s.LateDeduction.ToString("N2")</td>
-                    <td class="num">@s.AbsenceDeduction.ToString("N2")</td>
+                    <td class="num">@s.Gross.ToString("N2")</td>
+                    <td class="num">@s.Sss.ToString("N2")</td>
+                    <td class="num">@s.PhilHealth.ToString("N2")</td>
+                    <td class="num">@s.PagIbig.ToString("N2")</td>
+                    <td class="num">@s.Tax.ToString("N2")</td>
+                    <td class="num">@s.OtherDeductions.ToString("N2")</td>
                     <td class="num"><strong>₱@s.Net.ToString("N2")</strong></td>
-                    @if (Auth.IsAdmin)
-                    {
-                        <td class="row-actions"><button class="btn small danger" @onclick="() => Remove(s)">Delete</button></td>
-                    }
+                    <td class="row-actions">
+                        <button class="btn small" @onclick="() => slip = s">Payslip</button>
+                        @if (Auth.IsAdmin)
+                        {
+                            <button class="btn small danger" @onclick="() => Remove(s)">Delete</button>
+                        }
+                    </td>
                 </tr>
             }
         </tbody>
     </table>
 </div>
+
+<Payslip Record="slip" OnClose="CloseSlip" />
 
 @code {
     int empId;
@@ -92,28 +117,34 @@
     int lateMin;
     int absentDays;
     decimal otHours;
+    int regHol;
+    int specHol;
+    decimal nightHours;
+    int leaveDays;
+    decimal otherDed;
     string? msg;
     bool ok;
+    SalaryRecord? slip;
 
+    static string M(decimal d) => "₱" + d.ToString("N2");
     static string ShiftText(TimeSpan t) => DateTime.Today.Add(t).ToString("h:mm tt");
 
     Employee? SelectedEmp => Svc.GetEmployee(empId);
 
-    SalaryAmounts? Calc => SelectedEmp is Employee e
-        ? EmsService.CalculateAmounts(e.BasicSalary, lateMin, absentDays, otHours)
-        : null;
+    PayrollInput Input => new PayrollInput(lateMin, absentDays, otHours, allowance, regHol, specHol, nightHours, leaveDays, otherDed);
 
-    decimal Net => SelectedEmp is Employee e && Calc is SalaryAmounts c
-        ? e.BasicSalary + c.Overtime + allowance - c.LateDeduction - c.AbsenceDeduction
-        : 0m;
+    PayrollResult? Calc => SelectedEmp is Employee e ? PayrollCalculator.Compute(e.BasicSalary, Input) : null;
 
     protected override async Task OnInitializedAsync()
     {
         var now = await Svc.NowAsync();
         period = now.ToString("yyyy-MM");
+        allowance = 1500m;
     }
 
     void SetPeriod(ChangeEventArgs e) => period = e.Value?.ToString() ?? "";
+
+    void CloseSlip() => slip = null;
 
     async Task FillFromAttendance()
     {
@@ -123,21 +154,27 @@
         lateMin = s.LateMinutes;
         absentDays = s.AbsentDays;
         otHours = s.OvertimeHours;
-        msg = "Filled from attendance records. You can still adjust the numbers.";
+        msg = "Late minutes, absent days and overtime were filled from the attendance records. You can still adjust them.";
         ok = true;
     }
 
     async Task Save()
     {
-        var r = await Svc.SaveSalaryAsync(new SalaryRecord
+        var r = await Svc.SaveSalaryAsync(empId, period, Input);
+        msg = r.Message;
+        ok = r.Ok;
+    }
+
+    async Task Compute13th()
+    {
+        if (empId == 0) { msg = "Please choose an employee first."; ok = false; return; }
+        if (period.Length < 4 || !int.TryParse(period.Substring(0, 4), out var year))
         {
-            EmployeeId = empId,
-            Period = period,
-            Allowance = allowance,
-            LateMinutes = lateMin,
-            AbsentDays = absentDays,
-            OvertimeHours = otHours
-        });
+            msg = "Please choose a month first (its year is used).";
+            ok = false;
+            return;
+        }
+        var r = await Svc.Save13thMonthAsync(empId, year);
         msg = r.Message;
         ok = r.Ok;
     }
