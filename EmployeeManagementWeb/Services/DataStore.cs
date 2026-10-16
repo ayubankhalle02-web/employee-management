@@ -10,7 +10,7 @@ namespace EmployeeManagementWeb.Services;
 public class DataStore
 {
     // bumped when the shape of the saved data or the sample data changes (older saved data is ignored)
-    const string Key = "ems.data.v3";
+    const string Key = "ems.data.v4";
     static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
     readonly IJSRuntime js;
     bool loaded;
@@ -144,7 +144,8 @@ public class DataStore
                     Data.Attendance.Add(new AttendanceRecord
                     {
                         Id = recordId++, EmployeeId = e.Id, Date = EmsService.DateKey(d),
-                        TimeIn = nightIn, TimeOut = nightOut > now ? null : nightOut, Photo = photo
+                        // the latest shift is left open ("still on duty") so it can be punched out to test the night differential
+                        TimeIn = nightIn, TimeOut = (nightOut > now || (d == now.Date.AddDays(-1) && (now - nightIn).TotalHours <= 20)) ? null : nightOut, Photo = photo
                     });
                     continue;
                 }
