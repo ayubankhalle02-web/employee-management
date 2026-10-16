@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using EmployeeManagementWeb.Models;
 using Microsoft.JSInterop;
@@ -8,14 +9,18 @@ namespace EmployeeManagementWeb.Services;
 /// <summary>Holds the in-memory database and persists it to localStorage.</summary>
 public class DataStore
 {
-    // bumped to v2 when payroll fields and the sample employees were added (older saved data is ignored)
-    const string Key = "ems.data.v2";
+    // bumped when the shape of the saved data or the sample data changes (older saved data is ignored)
+    const string Key = "ems.data.v3";
+    static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
     readonly IJSRuntime js;
     bool loaded;
 
     public Db Data { get; private set; } = new();
 
     public DataStore(IJSRuntime js) => this.js = js;
+
+    async Task<DateTime> NowAsync()
+        => DateTime.ParseExact(await js.InvokeAsync<string>("ems.now"), "yyyy-MM-dd'T'HH:mm:ss", Inv);
 
     public async Task InitAsync()
     {
@@ -28,7 +33,7 @@ public class DataStore
             catch { Data = new Db(); }
         }
 
-        if (Data.Users.Count == 0) Seed();
+        if (Data.Users.Count == 0) Seed(await NowAsync());
         loaded = true;
         await SaveAsync();
     }
@@ -39,7 +44,7 @@ public class DataStore
 
     public async Task ResetAsync()
     {
-        Seed();
+        Seed(await NowAsync());
         loaded = true;
         await SaveAsync();
     }
@@ -72,7 +77,9 @@ public class DataStore
         ("EMP012", "Hazel Fernandez",    "Inventory Clerk",             "0917-555-0112", "Valenzuela City",   17500m, "2026-05-04"),
     };
 
-    void Seed()
+    static readonly string[] AvatarColors = { "#5b5bf0", "#8a5cf6", "#f0509b", "#ff8a3d", "#22b573", "#2f9bff" };
+
+    void Seed(DateTime now)
     {
         Data = new Db();
 
@@ -89,34 +96,111 @@ public class DataStore
         Data.Users.Add(MakeUser(1, "owner", "owner123", "Owner", null));
         Data.Users.Add(MakeUser(2, "employee", "employee123", "Employee", 2));   // Maria Santos
 
-        SeedPayrollHistory();
+        // Attendance for the last ~2 months, so "Fill from attendance" has real data to read.
+        var windowStart = new DateTime(now.Year, now.Month, 1).AddMonths(-2);
+        SeedAttendance(now, windowStart);
+        SeedPayrollHistory(now, windowStart);
     }
 
-    /// <summary>January - September 2026 payroll for every employee, so the salary page and 13th month have real data.</summary>
-    void SeedPayrollHistory()
+    static DateTime ParseDate(string s)
+        => DateTime.TryParseExact(s, "yyyy-MM-dd", Inv, DateTimeStyles.None, out var d) ? d : DateTime.MinValue;
+
+    /// <summary>A small coloured avatar with the employee's initials, used as the sample "photo proof".</summary>
+    static string PlaceholderPhoto(Employee e)
+    {
+        var parts = e.FullName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var initials = (parts[0].Substring(0, 1) + parts[parts.Length - 1].Substring(0, 1)).ToUpperInvariant();
+        var color = AvatarColors[e.Id % AvatarColors.Length];
+        var svg = "<svg xmlns='http://www.w3.org/2000/svg' width='64' height='64'><rect width='64' height='64' fill='" + color +
+                  "'/><text x='32' y='41' font-size='24' font-family='Arial' fill='white' text-anchor='middle'>" + initials + "</text></svg>";
+        return "data:image/svg+xml;base64," + Convert.ToBase64String(Encoding.UTF8.GetBytes(svg));
+    }
+
+    /// <summary>Mon-Sat punch-in/out records from windowStart until today. Fixed random seeds = the same data every time.</summary>
+    void SeedAttendance(DateTime now, DateTime windowStart)
+    {
+        int recordId = 1;
+        foreach (var e in Data.Employees)
+        {
+            var hired = ParseDate(e.DateHired);
+            var photo = PlaceholderPhoto(e);
+
+            for (var d = windowStart; d <= now.Date; d = d.AddDays(1))
+            {
+                if (d.DayOfWeek == DayOfWeek.Sunday || d < hired) continue;
+
+                var rnd = new Random(e.Id * 100003 + d.Year * 400 + d.DayOfYear);
+                bool isToday = d == now.Date;
+
+                if (isToday)
+                {
+                    // today: only people who have "already arrived" (after 9 AM); Maria is left out so the employee login can try punching in
+                    if (now.Hour < 9 || e.Id == 2 || rnd.Next(0, 4) == 0) continue;
+                }
+                else if (rnd.Next(0, 20) == 0)
+                {
+                    continue;   // about 1 in 20 days is an absence
+                }
+
+                bool late = !isToday && rnd.Next(0, 10) < 3;
+                var timeIn = d + (late ? new TimeSpan(9, rnd.Next(1, 46), 0) : new TimeSpan(8, rnd.Next(30, 60), 0));
+
+                DateTime? timeOut = null;
+                if (!isToday)
+                {
+                    bool overtime = rnd.Next(0, 10) < 2;
+                    timeOut = d + (overtime ? new TimeSpan(18, rnd.Next(15, 120), 0) : new TimeSpan(17, rnd.Next(30, 60), 0));
+                }
+
+                Data.Attendance.Add(new AttendanceRecord
+                {
+                    Id = recordId++, EmployeeId = e.Id, Date = EmsService.DateKey(d),
+                    TimeIn = timeIn, TimeOut = timeOut, Photo = photo
+                });
+            }
+        }
+    }
+
+    /// <summary>
+    /// Saved payroll for every full month before this one (this year). Months covered by the sample attendance are
+    /// computed from it, so the payroll and the attendance agree; older months use fixed pseudo-random values.
+    /// </summary>
+    void SeedPayrollHistory(DateTime now, DateTime windowStart)
     {
         int salaryId = 1;
         foreach (var e in Data.Employees)
         {
-            var hired = DateTime.ParseExact(e.DateHired, "yyyy-MM-dd", CultureInfo.InvariantCulture);
-            for (int m = 1; m <= 9; m++)
+            var hired = ParseDate(e.DateHired);
+            for (int m = 1; m < now.Month; m++)
             {
-                var monthStart = new DateTime(2026, m, 1);
+                var monthStart = new DateTime(now.Year, m, 1);
                 if (monthStart <= hired) continue;                    // first full month after hiring
 
-                var rnd = new Random(e.Id * 100 + m);                 // fixed seed = same sample data every time
-                var input = new PayrollInput(
-                    LateMinutes: rnd.Next(0, 3) == 0 ? rnd.Next(5, 50) : 0,
-                    AbsentDays: rnd.Next(0, 9) == 0 ? 1 : 0,
-                    OvertimeHours: rnd.Next(0, 3) == 0 ? rnd.Next(2, 9) : 0,
-                    Allowance: 1500m,
-                    RegHolidayDays: rnd.Next(0, 6) == 0 ? 1 : 0,
-                    SpecialHolidayDays: 0,
-                    NightHours: 0,
-                    LeaveDays: 0,
-                    OtherDeductions: e.Id % 4 == 0 ? 1000m : 0m);    // e.g. a company loan repayment
+                var period = $"{now.Year}-{m:00}";
+                var loan = e.Id % 4 == 0 ? 1000m : 0m;                // e.g. a company loan repayment
 
-                Data.Salaries.Add(PayrollCalculator.BuildRecord(salaryId++, e, $"2026-{m:00}", input));
+                PayrollInput input;
+                if (monthStart >= windowStart)
+                {
+                    var s = PayrollCalculator.Summarize(Data, e, period, now);
+                    input = new PayrollInput(s.LateMinutes, s.AbsentDays, s.OvertimeHours, 1500m, 0, 0, 0m, 0, loan);
+                }
+                else
+                {
+                    var rnd = new Random(e.Id * 100 + m);
+                    input = new PayrollInput(
+                        LateMinutes: rnd.Next(0, 3) == 0 ? rnd.Next(5, 50) : 0,
+                        AbsentDays: rnd.Next(0, 9) == 0 ? 1 : 0,
+                        OvertimeHours: rnd.Next(0, 3) == 0 ? rnd.Next(2, 9) : 0,
+                        Allowance: 1500m,
+                        RegHolidayDays: rnd.Next(0, 6) == 0 ? 1 : 0,
+                        SpecialHolidayDays: 0,
+                        NightHours: 0,
+                        LeaveDays: 0,
+                        OtherDeductions: loan);
+                }
+
+                Data.Salaries.Add(PayrollCalculator.BuildRecord(salaryId++, e, period, input));
             }
         }
     }

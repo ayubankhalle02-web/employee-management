@@ -13,7 +13,19 @@ public record Result(bool Ok, string Message)
 /// <summary>What the attendance records say about one employee in one month.</summary>
 public record AttendanceSummary(int LateMinutes, int AbsentDays, decimal OvertimeHours);
 
-public record DashboardStats(int ActiveEmployees, int TodayAttendance, int PendingRequests, string? MyStatus);
+public record MonthTotal(string Period, decimal Gross, decimal Net, decimal Sss, decimal PhilHealth, decimal PagIbig, decimal Tax, decimal Other);
+
+public class DashboardStats
+{
+    public DateTime Now { get; set; }
+    public int ActiveEmployees { get; set; }
+    public int TodayAttendance { get; set; }
+    public int PendingRequests { get; set; }
+    public string? MyStatus { get; set; }
+    public List<MonthTotal> Trend { get; set; } = new();
+    public List<AttendanceRecord> TodayRecords { get; set; } = new();
+    public List<ServiceRequest> PendingList { get; set; } = new();
+}
 
 /// <summary>
 /// All business rules live here, and every method checks the caller's role,
@@ -67,21 +79,35 @@ public class EmsService
     // ---------------------------------------------------------- dashboard
     public async Task<DashboardStats> GetDashboardAsync()
     {
-        var today = DateKey(await NowAsync());
+        var now = await NowAsync();
+        var today = DateKey(now);
+        var stats = new DashboardStats { Now = now };
 
         if (auth.IsAdmin)
         {
-            return new DashboardStats(
-                Data.Employees.Count(e => e.Status == "Active"),
-                Data.Attendance.Count(a => a.Date == today),
-                Data.Requests.Count(r => r.Status == "Pending"),
-                null);
+            stats.ActiveEmployees = Data.Employees.Count(e => e.Status == "Active");
+            stats.TodayAttendance = Data.Attendance.Count(a => a.Date == today);
+            stats.PendingRequests = Data.Requests.Count(r => r.Status == "Pending");
+
+            stats.Trend = Data.Salaries
+                .Where(s => s.Kind == "Monthly")
+                .GroupBy(s => s.Period)
+                .OrderBy(g => g.Key)
+                .Select(g => new MonthTotal(g.Key, g.Sum(x => x.Gross), g.Sum(x => x.Net), g.Sum(x => x.Sss),
+                    g.Sum(x => x.PhilHealth), g.Sum(x => x.PagIbig), g.Sum(x => x.Tax), g.Sum(x => x.OtherDeductions)))
+                .TakeLast(9)
+                .ToList();
+
+            stats.TodayRecords = Data.Attendance.Where(a => a.Date == today).OrderBy(a => a.TimeIn).ToList();
+            stats.PendingList = Data.Requests.Where(r => r.Status == "Pending").OrderByDescending(r => r.RequestDate).Take(5).ToList();
+            return stats;
         }
 
         var id = auth.EmployeeId;
         var rec = Data.Attendance.FirstOrDefault(a => a.EmployeeId == id && a.Date == today);
-        var mine = rec == null ? "Not punched in" : rec.TimeOut != null ? "Punched out" : "Punched in";
-        return new DashboardStats(0, 0, Data.Requests.Count(r => r.EmployeeId == id && r.Status == "Pending"), mine);
+        stats.MyStatus = rec == null ? "Not punched in" : rec.TimeOut != null ? "Punched out" : "Punched in";
+        stats.PendingRequests = Data.Requests.Count(r => r.EmployeeId == id && r.Status == "Pending");
+        return stats;
     }
 
     // ---------------------------------------------------------- employees
@@ -259,37 +285,7 @@ public class EmsService
     public AttendanceSummary Summarize(int employeeId, string period, DateTime today)
     {
         var emp = GetEmployee(employeeId);
-        if (emp == null || !DateTime.TryParseExact(period + "-01", "yyyy-MM-dd", Inv, DateTimeStyles.None, out var first))
-            return new AttendanceSummary(0, 0, 0);
-
-        var last = first.AddMonths(1).AddDays(-1);
-        var recs = Data.Attendance.Where(a => a.EmployeeId == employeeId && a.Date.StartsWith(period)).ToList();
-
-        int lateMinutes = 0;
-        double otHours = 0;
-        foreach (var a in recs)
-        {
-            if (a.TimeIn is DateTime tin && tin.TimeOfDay > ShiftStart)
-                lateMinutes += (int)(tin.TimeOfDay - ShiftStart).TotalMinutes;
-            if (a.TimeOut is DateTime tout && tout.TimeOfDay > ShiftEnd)
-                otHours += (tout.TimeOfDay - ShiftEnd).TotalHours;
-        }
-
-        // Absent = a Mon-Sat day (after the hire date, before today) with no attendance record.
-        var startDay = first;
-        if (DateTime.TryParseExact(emp.DateHired, "yyyy-MM-dd", Inv, DateTimeStyles.None, out var hired) && hired > first)
-            startDay = hired;
-        var endDay = last < today.Date ? last : today.Date.AddDays(-1);
-
-        var present = recs.Select(a => a.Date).ToHashSet();
-        int absent = 0;
-        for (var d = startDay; d <= endDay; d = d.AddDays(1))
-        {
-            if (d.DayOfWeek == DayOfWeek.Sunday) continue;
-            if (!present.Contains(DateKey(d))) absent++;
-        }
-
-        return new AttendanceSummary(lateMinutes, absent, Math.Round((decimal)otHours, 2));
+        return emp == null ? new AttendanceSummary(0, 0, 0) : PayrollCalculator.Summarize(Data, emp, period, today);
     }
 
     /// <summary>Saves one month of payroll. One record per employee per month (saving again replaces it).</summary>

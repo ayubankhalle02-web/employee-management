@@ -1,3 +1,4 @@
+using System.Globalization;
 using EmployeeManagementWeb.Models;
 
 namespace EmployeeManagementWeb.Services;
@@ -117,5 +118,42 @@ public static class PayrollCalculator
         if (excess <= 0m) return 0m;
         var baseTaxable = (monthlyBasic - Sss(monthlyBasic) - PhilHealth(monthlyBasic) - PagIbig(monthlyBasic)) * 12m;
         return Round(AnnualTax(baseTaxable + excess) - AnnualTax(baseTaxable));
+    }
+
+    /// <summary>Late minutes, absent days and overtime hours for one employee in one month, from the attendance records.</summary>
+    public static AttendanceSummary Summarize(Db data, Employee emp, string period, DateTime today)
+    {
+        var inv = CultureInfo.InvariantCulture;
+        if (!DateTime.TryParseExact(period + "-01", "yyyy-MM-dd", inv, DateTimeStyles.None, out var first))
+            return new AttendanceSummary(0, 0, 0);
+
+        var last = first.AddMonths(1).AddDays(-1);
+        var recs = data.Attendance.Where(a => a.EmployeeId == emp.Id && a.Date.StartsWith(period)).ToList();
+
+        int lateMinutes = 0;
+        double otHours = 0;
+        foreach (var a in recs)
+        {
+            if (a.TimeIn is DateTime tin && tin.TimeOfDay > EmsService.ShiftStart)
+                lateMinutes += (int)(tin.TimeOfDay - EmsService.ShiftStart).TotalMinutes;
+            if (a.TimeOut is DateTime tout && tout.TimeOfDay > EmsService.ShiftEnd)
+                otHours += (tout.TimeOfDay - EmsService.ShiftEnd).TotalHours;
+        }
+
+        // Absent = a Mon-Sat day (after the hire date, before today) with no attendance record.
+        var startDay = first;
+        if (DateTime.TryParseExact(emp.DateHired, "yyyy-MM-dd", inv, DateTimeStyles.None, out var hired) && hired > first)
+            startDay = hired;
+        var endDay = last < today.Date ? last : today.Date.AddDays(-1);
+
+        var present = recs.Select(a => a.Date).ToHashSet();
+        int absent = 0;
+        for (var d = startDay; d <= endDay; d = d.AddDays(1))
+        {
+            if (d.DayOfWeek == DayOfWeek.Sunday) continue;
+            if (!present.Contains(EmsService.DateKey(d))) absent++;
+        }
+
+        return new AttendanceSummary(lateMinutes, absent, Math.Round((decimal)otHours, 2));
     }
 }

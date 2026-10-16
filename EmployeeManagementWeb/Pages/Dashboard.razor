@@ -8,34 +8,221 @@
 }
 else
 {
-    <div class="banner">
-        <div>
-            <h1>Welcome back, @(Auth.Current?.Username)! 👋</h1>
-            <p>
-                @if (Auth.IsAdmin)
-                {
-                    <text>Use the menu to manage employees, attendance, payroll, accounts and service requests.</text>
-                }
-                else
-                {
-                    <text>Use the menu to punch in/out, view your salary records and send service requests.</text>
-                }
-            </p>
+    <div class="dash">
+        <div class="banner">
+            <div>
+                <h1>@Greeting, @(Auth.Current?.Username)! 👋</h1>
+                <p>@stats.Now.ToString("dddd, MMMM d, yyyy") &nbsp;•&nbsp;
+                    @(Auth.IsAdmin ? "Here is what is happening in your company today." : "Here is a summary of your day.")</p>
+            </div>
+            <div class="banner-emoji">📊</div>
         </div>
-        <div class="banner-emoji">📊</div>
-    </div>
 
-    <div class="cards">
         @if (Auth.IsAdmin)
         {
-            <div class="stat blue"><div class="stat-ico">👥</div><div><span>ACTIVE EMPLOYEES</span><b>@stats.ActiveEmployees</b></div></div>
-            <div class="stat green"><div class="stat-ico">🕒</div><div><span>TODAY'S ATTENDANCE</span><b>@stats.TodayAttendance</b></div></div>
-            <div class="stat orange"><div class="stat-ico">📩</div><div><span>PENDING REQUESTS</span><b>@stats.PendingRequests</b></div></div>
+            <div class="cards">
+                <div class="stat blue"><div class="stat-ico">👥</div><div><span>ACTIVE EMPLOYEES</span><b>@stats.ActiveEmployees</b></div></div>
+                <div class="stat green"><div class="stat-ico">🕒</div><div><span>TODAY'S ATTENDANCE</span><b>@stats.TodayAttendance <em>/ @stats.ActiveEmployees</em></b></div></div>
+                <div class="stat orange"><div class="stat-ico">📩</div><div><span>PENDING REQUESTS</span><b>@stats.PendingRequests</b></div></div>
+                <div class="stat purple"><div class="stat-ico">💰</div><div><span>LATEST NET PAYROLL @(Latest == null ? "" : "(" + Month(Latest.Period) + ")")</span><b class="small">@(Latest == null ? "-" : M(Latest.Net))</b></div></div>
+            </div>
+
+            <div class="dash-grid">
+                <div class="card">
+                    <h2>📈 Net payroll by month</h2>
+                    @if (stats.Trend.Count == 0)
+                    {
+                        <div class="empty-note">No payroll saved yet. Run payroll on the Salary page.</div>
+                    }
+                    else
+                    {
+                        <div class="bars">
+                            @for (int i = 0; i < stats.Trend.Count; i++)
+                            {
+                                var t = stats.Trend[i];
+                                <div class="bar-col">
+                                    <div class="bar @(i == stats.Trend.Count - 1 ? "last" : "")" style="height:@(Pct(t.Net))%; animation-delay:@(i * 70)ms" title="@Month(t.Period): @M(t.Net)">
+                                        <span>@K(t.Net)</span>
+                                    </div>
+                                    <small>@Month(t.Period)</small>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+
+                <div class="card">
+                    <h2>⚡ Quick actions</h2>
+                    <div class="quick-grid">
+                        <a class="quick" href="employees"><span>👥</span>Manage employees</a>
+                        <a class="quick" href="attendance"><span>🕒</span>Attendance</a>
+                        <a class="quick" href="salary"><span>💰</span>Run payroll</a>
+                        <a class="quick" href="requests"><span>📩</span>Review requests</a>
+                        <a class="quick" href="accounts"><span>🔑</span>Accounts</a>
+                        <a class="quick" href="salary"><span>🎁</span>13th month pay</a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="dash-grid thirds">
+                <div class="card">
+                    <h2>🧾 Where the money goes @(Latest == null ? "" : "(" + Month(Latest.Period) + ")")</h2>
+                    @if (Latest == null)
+                    {
+                        <div class="empty-note">Nothing to show yet.</div>
+                    }
+                    else
+                    {
+                        <div class="stack">
+                            <div class="seg c-net" style="flex:@(Share(Latest.Net)) 1 0" title="Net pay"></div>
+                            <div class="seg c-sss" style="flex:@(Share(Latest.Sss)) 1 0" title="SSS"></div>
+                            <div class="seg c-phil" style="flex:@(Share(Latest.PhilHealth)) 1 0" title="PhilHealth"></div>
+                            <div class="seg c-pag" style="flex:@(Share(Latest.PagIbig)) 1 0" title="Pag-IBIG"></div>
+                            <div class="seg c-tax" style="flex:@(Share(Latest.Tax)) 1 0" title="Tax"></div>
+                            <div class="seg c-other" style="flex:@(Share(Latest.Other)) 1 0" title="Other"></div>
+                        </div>
+                        <div class="legend">
+                            <div><i class="c-net"></i>Net pay<b>@M(Latest.Net)</b></div>
+                            <div><i class="c-sss"></i>SSS<b>@M(Latest.Sss)</b></div>
+                            <div><i class="c-phil"></i>PhilHealth<b>@M(Latest.PhilHealth)</b></div>
+                            <div><i class="c-pag"></i>Pag-IBIG<b>@M(Latest.PagIbig)</b></div>
+                            <div><i class="c-tax"></i>Income tax<b>@M(Latest.Tax)</b></div>
+                            <div><i class="c-other"></i>Loans / other<b>@M(Latest.Other)</b></div>
+                        </div>
+                        <p class="muted small-note">Total gross payroll: <b>@M(Latest.Gross)</b></p>
+                    }
+                </div>
+
+                <div class="card">
+                    <h2>✅ In today</h2>
+                    @if (stats.TodayRecords.Count == 0)
+                    {
+                        <div class="empty-note">Nobody has punched in yet today. 😴</div>
+                    }
+                    else
+                    {
+                        @foreach (var a in stats.TodayRecords.Take(6))
+                        {
+                            <div class="list-row">
+                                @if (!string.IsNullOrEmpty(a.Photo))
+                                {
+                                    <img class="mini-photo" src="@a.Photo" alt="" />
+                                }
+                                else
+                                {
+                                    <span class="mini-avatar">@Initials(Svc.EmployeeName(a.EmployeeId))</span>
+                                }
+                                <div class="list-main">
+                                    <strong>@Svc.EmployeeName(a.EmployeeId)</strong>
+                                    <small>In @(a.TimeIn?.ToString("hh:mm tt") ?? "-")@(a.TimeOut != null ? " • Out " + a.TimeOut.Value.ToString("hh:mm tt") : "")</small>
+                                </div>
+                            </div>
+                        }
+                    }
+                    <a class="more" href="attendance">Open attendance →</a>
+                </div>
+
+                <div class="card">
+                    <h2>📬 Pending requests</h2>
+                    @if (stats.PendingList.Count == 0)
+                    {
+                        <div class="empty-note">All caught up! 🎉</div>
+                    }
+                    else
+                    {
+                        @foreach (var r in stats.PendingList)
+                        {
+                            <div class="list-row">
+                                <span class="mini-avatar warm">@Initials(Svc.EmployeeName(r.EmployeeId))</span>
+                                <div class="list-main">
+                                    <strong>@Svc.EmployeeName(r.EmployeeId)</strong>
+                                    <small>@r.RequestType • @r.Details</small>
+                                </div>
+                            </div>
+                        }
+                    }
+                    <a class="more" href="requests">Review requests →</a>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>🆕 Recently hired</h2>
+                <div class="hires">
+                    @foreach (var e in Svc.ListEmployees().OrderByDescending(x => x.DateHired).Take(5))
+                    {
+                        <div class="hire">
+                            <span class="mini-avatar big">@Initials(e.FullName)</span>
+                            <strong>@e.FullName</strong>
+                            <small>@e.Position</small>
+                            <small class="muted">Hired @e.DateHired</small>
+                        </div>
+                    }
+                </div>
+            </div>
         }
         else
         {
-            <div class="stat green"><div class="stat-ico">🕒</div><div><span>MY ATTENDANCE TODAY</span><b class="small">@stats.MyStatus</b></div></div>
-            <div class="stat orange"><div class="stat-ico">📩</div><div><span>MY PENDING REQUESTS</span><b>@stats.PendingRequests</b></div></div>
+            <div class="cards">
+                <div class="stat green"><div class="stat-ico">🕒</div><div><span>MY ATTENDANCE TODAY</span><b class="small">@stats.MyStatus</b></div></div>
+                <div class="stat orange"><div class="stat-ico">📩</div><div><span>MY PENDING REQUESTS</span><b>@stats.PendingRequests</b></div></div>
+                <div class="stat purple"><div class="stat-ico">💰</div><div><span>LATEST NET PAY @(MySlips.Count == 0 ? "" : "(" + MySlips[0].PeriodLabel + ")")</span><b class="small">@(MySlips.Count == 0 ? "-" : M(MySlips[0].Net))</b></div></div>
+            </div>
+
+            <div class="dash-grid">
+                <div class="card">
+                    <h2>🧾 My recent payslips</h2>
+                    @if (MySlips.Count == 0)
+                    {
+                        <div class="empty-note">No payslips yet.</div>
+                    }
+                    else
+                    {
+                        @foreach (var s in MySlips.Take(5))
+                        {
+                            <div class="list-row">
+                                <span class="mini-avatar">💵</span>
+                                <div class="list-main">
+                                    <strong>@s.PeriodLabel</strong>
+                                    <small>Gross @M(s.Gross)</small>
+                                </div>
+                                <b class="amount">@M(s.Net)</b>
+                            </div>
+                        }
+                    }
+                    <a class="more" href="salary">See all payslips →</a>
+                </div>
+
+                <div class="card">
+                    <h2>⚡ Quick actions</h2>
+                    <div class="quick-grid">
+                        <a class="quick" href="attendance"><span>🕒</span>Punch in / out</a>
+                        <a class="quick" href="salary"><span>💰</span>My salary</a>
+                        <a class="quick" href="self-service"><span>🙋</span>Self-service</a>
+                        <a class="quick" href="self-service"><span>📩</span>Send a request</a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>📬 My requests</h2>
+                @if (Svc.ListRequests().Count == 0)
+                {
+                    <div class="empty-note">You have not sent any requests yet.</div>
+                }
+                else
+                {
+                    @foreach (var r in Svc.ListRequests().Take(4))
+                    {
+                        <div class="list-row">
+                            <div class="list-main">
+                                <strong>@r.RequestType</strong>
+                                <small>@r.Details</small>
+                            </div>
+                            <span class="badge @r.Status.ToLowerInvariant()">@r.Status</span>
+                        </div>
+                    }
+                }
+            </div>
         }
     </div>
 }
@@ -43,5 +230,39 @@ else
 @code {
     DashboardStats? stats;
 
+    MonthTotal? Latest => stats != null && stats.Trend.Count > 0 ? stats.Trend[stats.Trend.Count - 1] : null;
+    List<SalaryRecord> MySlips => Svc.ListSalary();
+
+    string Greeting => stats == null ? "Welcome" : stats.Now.Hour < 12 ? "Good morning" : stats.Now.Hour < 18 ? "Good afternoon" : "Good evening";
+
     protected override async Task OnInitializedAsync() => stats = await Svc.GetDashboardAsync();
+
+    static string M(decimal d) => "₱" + d.ToString("N2");
+    static string K(decimal d) => d >= 1000m ? "₱" + (d / 1000m).ToString("N0") + "k" : "₱" + d.ToString("N0");
+
+    static string Month(string period)
+        => period.Length >= 7 && int.TryParse(period.Substring(5, 2), out var m) && m >= 1 && m <= 12
+            ? new DateTime(2000, m, 1).ToString("MMM")
+            : period;
+
+    static string Initials(string name)
+    {
+        var parts = name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length == 0 ? "?" : parts.Length == 1 ? parts[0].Substring(0, 1).ToUpperInvariant()
+            : (parts[0].Substring(0, 1) + parts[^1].Substring(0, 1)).ToUpperInvariant();
+    }
+
+    int Pct(decimal net)
+    {
+        var max = stats!.Trend.Max(t => t.Net);
+        return max <= 0m ? 0 : Math.Max(4, (int)Math.Round(net / max * 100m));
+    }
+
+    // width of a segment in the "where the money goes" bar, in tenths of a percent
+    int Share(decimal part)
+    {
+        var l = Latest;
+        if (l == null || l.Gross <= 0m || part <= 0m) return 0;
+        return (int)Math.Round(part / l.Gross * 1000m);
+    }
 }
