@@ -159,6 +159,6 @@
     public async ValueTask DisposeAsync()
     {
         try { await JS.InvokeVoidAsync("ems.stopCamera", "cam"); }
-        catch { /* page is being torn down */ }
+        catch { }
     }
 }

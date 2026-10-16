@@ -1,8 +1,5 @@
 @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap');
 
-/* =========================================================
-   Theme tokens (light is default, dark via [data-theme=dark])
-   ========================================================= */
 :root {
   --bg: #eef0fb;
   --panel: rgba(255, 255, 255, .80);
@@ -70,7 +67,6 @@ body {
 }
 ::selection { background: var(--primary); color: #fff; }
 
-/* animated colour blobs behind everything */
 body::before {
   content: ""; position: fixed; inset: -20%; z-index: -1; pointer-events: none;
   background:
@@ -95,7 +91,6 @@ h3 { font-size: .95rem; font-weight: 600; margin: 1.2rem 0 .6rem; }
 .splash { padding: 4rem; text-align: center; color: var(--muted); animation: pulse 1.4s ease-in-out infinite; }
 code { background: var(--soft); color: var(--primary); padding: 2px 7px; border-radius: 6px; font-size: .85em; }
 
-/* page content slides in */
 .content > * { animation: rise .55s cubic-bezier(.2, .8, .2, 1) both; }
 .content > *:nth-child(2) { animation-delay: .07s; }
 .content > *:nth-child(3) { animation-delay: .14s; }
@@ -105,9 +100,6 @@ code { background: var(--soft); color: var(--primary); padding: 2px 7px; border-
 @keyframes pulse { 50% { opacity: .45; } }
 @keyframes float { 50% { transform: translateY(-8px); } }
 
-/* =========================================================
-   Layout
-   ========================================================= */
 .shell { display: flex; min-height: 100vh; }
 .sidebar {
   width: 256px; flex-shrink: 0; padding: 24px 16px; display: flex; flex-direction: column; gap: 6px; color: #fff;
@@ -154,9 +146,6 @@ code { background: var(--soft); color: var(--primary); padding: 2px 7px; border-
 .user-chip small { color: var(--muted); font-size: .74rem; }
 .content { padding: 28px 30px 70px; }
 
-/* =========================================================
-   Controls
-   ========================================================= */
 label { display: flex; flex-direction: column; gap: 6px; font-weight: 600; font-size: .78rem; color: var(--label); letter-spacing: .01em; }
 input, select {
   font: inherit; font-weight: 400; font-size: .92rem; padding: 11px 13px; width: 100%; color: var(--ink);
@@ -193,7 +182,6 @@ option { background: var(--panel-solid); color: var(--ink); }
 .file-btn:hover { transform: translateY(-3px); }
 .file-btn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
 
-/* cards */
 .card { position: relative; overflow: hidden; max-width: 1100px; margin-bottom: 24px; padding: 26px 24px 24px;
   background: var(--panel); backdrop-filter: blur(12px); border: 1px solid var(--glass-border); border-radius: var(--radius); box-shadow: var(--shadow);
   transition: transform .25s, box-shadow .25s; }
@@ -209,9 +197,6 @@ option { background: var(--panel-solid); color: var(--ink); }
 .alert.err { background: var(--err-bg); color: var(--err-ink); border-left: 5px solid var(--danger); }
 .req { color: var(--danger); font-size: .76rem; font-weight: 600; }
 
-/* =========================================================
-   Tables
-   ========================================================= */
 .table-wrap { max-width: 1100px; margin-bottom: 22px; overflow-x: auto; background: var(--panel); backdrop-filter: blur(12px);
   border: 1px solid var(--glass-border); border-radius: var(--radius); box-shadow: var(--shadow); }
 table { border-collapse: collapse; width: 100%; font-size: .86rem; }
@@ -238,9 +223,6 @@ tr.dim td { color: var(--muted); opacity: .75; }
 .breakdown td { padding: 10px 14px; border-bottom: 1px solid var(--line); }
 .breakdown .total td { font-weight: 700; font-size: 1rem; background: rgba(91, 91, 240, .15); color: var(--primary); border-bottom: 0; }
 
-/* =========================================================
-   Dashboard
-   ========================================================= */
 .banner {
   position: relative; overflow: hidden; display: flex; align-items: center; justify-content: space-between; gap: 20px; max-width: 1100px; margin-bottom: 26px; padding: 30px 34px; border-radius: 22px; color: #fff;
   background: linear-gradient(120deg, #4f46e5, #8b5cf6 35%, #ec4899 70%, #f59e0b); background-size: 220% 220%; animation: rise .55s both, flow 10s ease infinite;
@@ -271,9 +253,6 @@ tr.dim td { color: var(--muted); opacity: .75; }
 .stat b { display: block; font-size: 2.2rem; line-height: 1.2; }
 .stat b.small { font-size: 1.25rem; line-height: 2.6rem; }
 
-/* =========================================================
-   Attendance photo
-   ========================================================= */
 .photo-box { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 8px; }
 video { width: 320px; max-width: 100%; border-radius: 16px; background: #000; transform: scaleX(-1); box-shadow: var(--shadow-lg); border: 3px solid var(--panel-solid); }
 .hidden { display: none; }
@@ -284,9 +263,6 @@ video { width: 320px; max-width: 100%; border-radius: 16px; background: #000; tr
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 .modal img { max-width: 92vw; max-height: 90vh; border-radius: 18px; border: 5px solid #fff; animation: pop .35s both; }
 
-/* =========================================================
-   Login
-   ========================================================= */
 .login-wrap { position: relative; overflow: hidden; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px;
   background: linear-gradient(125deg, #4338ca, #7c3aed 35%, #db2777 70%, #f59e0b); background-size: 240% 240%; animation: flow 14s ease infinite; }
 .login-wrap::before, .login-wrap::after { content: ""; position: absolute; border-radius: 50%; background: rgba(255,255,255,.12); animation: float 7s ease-in-out infinite; }
@@ -304,14 +280,10 @@ video { width: 320px; max-width: 100%; border-radius: 16px; background: #000; tr
 #blazor-error-ui { display: none; position: fixed; bottom: 0; left: 0; right: 0; background: #fff3cd; color: #333; padding: 10px 20px; z-index: 100; }
 #blazor-error-ui .dismiss { cursor: pointer; float: right; }
 
-/* scrollbars */
 * { scrollbar-width: thin; scrollbar-color: rgba(91, 91, 240, .5) transparent; }
 ::-webkit-scrollbar { width: 9px; height: 9px; }
 ::-webkit-scrollbar-thumb { background: linear-gradient(var(--primary), var(--pink)); border-radius: 9px; }
 
-/* =========================================================
-   Small screens + reduced motion
-   ========================================================= */
 @media (max-width: 860px) {
   .shell { flex-direction: column; }
   .sidebar { position: static; width: 100%; height: auto; padding: 16px; }
@@ -328,9 +300,6 @@ video { width: 320px; max-width: 100%; border-radius: 16px; background: #000; tr
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
 
-/* =========================================================
-   Payroll breakdown + payslip
-   ========================================================= */
 .breakdown .sec td { background: linear-gradient(90deg, rgba(91,91,240,.16), rgba(240,80,155,.10)); color: var(--primary); font-size: .7rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; padding: 8px 14px; }
 .breakdown .sub td { font-weight: 600; border-top: 1.5px solid var(--line); background: var(--row-alt); }
 .breakdown .neg { color: var(--err-ink); }
@@ -344,9 +313,6 @@ video { width: 320px; max-width: 100%; border-radius: 16px; background: #000; tr
 .slip-emp { display: flex; justify-content: space-between; margin-top: 14px; padding: 10px 14px; border-radius: 12px; background: var(--soft); }
 .slip-emp span { color: var(--muted); }
 
-/* =========================================================
-   Dashboard widgets
-   ========================================================= */
 .dash { max-width: 1500px; }
 .dash .banner { max-width: none; }
 .dash .cards { max-width: none; margin-bottom: 22px; }

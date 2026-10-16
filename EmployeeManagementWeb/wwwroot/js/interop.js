@@ -1,4 +1,3 @@
-// Small browser helpers used by the Blazor app (storage, local clock, camera).
 window.ems = {
   load: function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
   save: function (k, v) { try { localStorage.setItem(k, v); return true; } catch (e) { return false; } },
@@ -14,7 +13,6 @@ window.ems = {
     return next;
   },
 
-  // Browser-local "now" as yyyy-MM-ddTHH:mm:ss (Blazor WASM's DateTime.Now is UTC).
   now: function () {
     var d = new Date();
     function p(n) { return (n < 10 ? "0" : "") + n; }

@@ -3,10 +3,6 @@ using System.Text;
 
 namespace EmployeeManagementWeb.Services;
 
-/// <summary>
-/// Salted, iterated SHA-256. (PBKDF2 is not available in browser WebAssembly.)
-/// Note: this app has no server, so this is demo-grade protection only.
-/// </summary>
 public static class PasswordHasher
 {
     public static string NewSalt() => Convert.ToBase64String(RandomNumberGenerator.GetBytes(16));

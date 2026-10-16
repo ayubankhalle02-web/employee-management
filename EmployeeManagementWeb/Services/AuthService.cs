@@ -22,7 +22,6 @@ public class AuthService
         this.js = js;
     }
 
-    /// <summary>Loads data and restores the login if this browser tab already has a session.</summary>
     public async Task RestoreAsync()
     {
         await store.InitAsync();

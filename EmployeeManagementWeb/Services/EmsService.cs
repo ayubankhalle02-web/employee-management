@@ -10,7 +10,6 @@ public record Result(bool Ok, string Message)
     public static Result Fail(string message) => new(false, message);
 }
 
-/// <summary>What the attendance records say about one employee in one month.</summary>
 public record AttendanceSummary(int LateMinutes, int AbsentDays, decimal OvertimeHours, decimal NightHours);
 
 public record MonthTotal(string Period, decimal Gross, decimal Net, decimal Sss, decimal PhilHealth, decimal PagIbig, decimal Tax, decimal Other);
@@ -27,19 +26,14 @@ public class DashboardStats
     public List<ServiceRequest> PendingList { get; set; } = new();
 }
 
-/// <summary>
-/// All business rules live here, and every method checks the caller's role,
-/// so a page can never bypass permissions by accident.
-/// </summary>
 public class EmsService
 {
-    // ---- Payroll rules (change these to match your store's policy) ----
-    public static readonly TimeSpan ShiftStart = new(9, 0, 0);    // late after 9:00 AM
-    public static readonly TimeSpan ShiftEnd = new(18, 0, 0);     // overtime after 6:00 PM
-    public static readonly TimeSpan NightStart = new(22, 0, 0);   // night differential window: 10:00 PM ...
-    public static readonly TimeSpan NightEnd = new(6, 0, 0);      // ... to 6:00 AM (next day)
-    public static readonly TimeSpan NightShiftFrom = new(18, 0, 0); // punching in at/after 6 PM = night shift (no late / day overtime)
-    public const int WorkDaysPerMonth = 26;                     // daily rate = basic / 26
+    public static readonly TimeSpan ShiftStart = new(9, 0, 0);
+    public static readonly TimeSpan ShiftEnd = new(18, 0, 0);
+    public static readonly TimeSpan NightStart = new(22, 0, 0);
+    public static readonly TimeSpan NightEnd = new(6, 0, 0);
+    public static readonly TimeSpan NightShiftFrom = new(18, 0, 0);
+    public const int WorkDaysPerMonth = 26;
     public const decimal HoursPerDay = 8m;
     public const decimal OvertimeMultiplier = 1.25m;
 
@@ -61,7 +55,6 @@ public class EmsService
 
     Db Data => store.Data;
 
-    // ------------------------------------------------------------ helpers
     public async Task<DateTime> NowAsync()
     {
         var s = await js.InvokeAsync<string>("ems.now");
@@ -70,7 +63,6 @@ public class EmsService
 
     public static string DateKey(DateTime d) => d.ToString("yyyy-MM-dd", Inv);
 
-    /// <summary>A shift is still running if there is a punch-in with no punch-out within the last 20 hours (covers shifts that cross midnight).</summary>
     static bool IsOnDuty(AttendanceRecord a, DateTime now) =>
         a.TimeIn is DateTime tin && a.TimeOut == null && tin <= now && (now - tin).TotalHours <= 20;
 
@@ -87,7 +79,6 @@ public class EmsService
     public string EmployeeNoOf(int id) => GetEmployee(id)?.EmployeeNo ?? "-";
     public string OwnName() => auth.EmployeeId is int id ? EmployeeName(id) : (auth.Current?.Username ?? "");
 
-    // ---------------------------------------------------------- dashboard
     public async Task<DashboardStats> GetDashboardAsync()
     {
         var now = await NowAsync();
@@ -121,13 +112,11 @@ public class EmsService
         return stats;
     }
 
-    // ---------------------------------------------------------- employees
     public List<Employee> ListEmployees() =>
         auth.IsAdmin
             ? Data.Employees.OrderByDescending(e => e.Id).ToList()
             : Data.Employees.Where(e => e.Id == auth.EmployeeId).ToList();
 
-    /// <summary>Adds (Id == 0) or updates an employee. Admin/Owner only.</summary>
     public async Task<Result> SaveEmployeeAsync(Employee input)
     {
         if (!auth.IsAdmin) return Denied();
@@ -176,7 +165,6 @@ public class EmsService
         return Result.Success($"{e.FullName} is now {e.Status}.");
     }
 
-    /// <summary>Permanently deletes an employee and everything linked to them. Owner only.</summary>
     public async Task<Result> DeleteEmployeeAsync(int id)
     {
         if (!auth.IsOwner) return Result.Fail("Only an Owner can delete employees. Use Deactivate instead.");
@@ -193,7 +181,6 @@ public class EmsService
         return Result.Success($"{e.FullName} and all linked records were deleted.");
     }
 
-    /// <summary>Employees may update only their own phone and address.</summary>
     public async Task<Result> UpdateOwnContactAsync(string phone, string address)
     {
         if (auth.EmployeeId is not int id || GetEmployee(id) is not Employee e)
@@ -204,14 +191,12 @@ public class EmsService
         return Result.Success("Contact details saved.");
     }
 
-    // --------------------------------------------------------- attendance
     public List<AttendanceRecord> ListAttendance() =>
         Data.Attendance
             .Where(a => auth.IsAdmin || a.EmployeeId == auth.EmployeeId)
             .OrderByDescending(a => a.TimeIn ?? DateTime.MinValue)
             .ToList();
 
-    /// <summary>Admins punch for the chosen employee; everyone else can only punch for themselves.</summary>
     Employee? ResolveTarget(string? empNo, out string error)
     {
         error = "";
@@ -279,7 +264,6 @@ public class EmsService
         var now = await NowAsync();
         var key = DateKey(now);
 
-        // The open shift may have started yesterday (night shift), so look for any unfinished punch-in, not just today's.
         var rec = FindOpenRecord(emp.Id, now);
         if (rec == null)
         {
@@ -297,21 +281,18 @@ public class EmsService
         return Result.Success($"{emp.FullName} punched OUT at {now.ToString("hh:mm:ss tt", Inv)}.{extra}");
     }
 
-    // ------------------------------------------------------------- salary
     public List<SalaryRecord> ListSalary() =>
         Data.Salaries
             .Where(s => auth.IsAdmin || s.EmployeeId == auth.EmployeeId)
             .OrderByDescending(s => s.Period).ThenByDescending(s => s.Id)
             .ToList();
 
-    /// <summary>Counts late minutes, absent days and overtime hours from attendance for a month.</summary>
     public AttendanceSummary Summarize(int employeeId, string period, DateTime today)
     {
         var emp = GetEmployee(employeeId);
         return emp == null ? new AttendanceSummary(0, 0, 0, 0) : PayrollCalculator.Summarize(Data, emp, period, today);
     }
 
-    /// <summary>Saves one month of payroll. One record per employee per month (saving again replaces it).</summary>
     public async Task<Result> SaveSalaryAsync(int employeeId, string period, PayrollInput input)
     {
         if (!auth.IsAdmin) return Denied();
@@ -337,7 +318,6 @@ public class EmsService
         return Result.Success($"{(existing == null ? "Saved" : "Updated")} payroll for {emp.FullName} ({period}). Net pay: ₱{calc.Net:N2}");
     }
 
-    /// <summary>13th month pay = total basic salary earned in the year / 12, from the saved monthly payrolls.</summary>
     public async Task<Result> Save13thMonthAsync(int employeeId, int year)
     {
         if (!auth.IsAdmin) return Denied();
@@ -378,7 +358,6 @@ public class EmsService
         return Result.Success("Payroll record deleted.");
     }
 
-    // ----------------------------------------------------------- accounts
     public List<User> ListUsers() => auth.IsAdmin ? Data.Users.OrderBy(u => u.Id).ToList() : new List<User>();
 
     public async Task<Result> CreateAccountAsync(string username, string password, string role, int employeeId)
@@ -451,7 +430,6 @@ public class EmsService
         return Result.Success("Account deleted.");
     }
 
-    // ----------------------------------------------------------- requests
     public List<ServiceRequest> ListRequests() =>
         Data.Requests
             .Where(r => auth.IsAdmin || r.EmployeeId == auth.EmployeeId)

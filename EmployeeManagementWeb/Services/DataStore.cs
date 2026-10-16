@@ -6,10 +6,8 @@ using Microsoft.JSInterop;
 
 namespace EmployeeManagementWeb.Services;
 
-/// <summary>Holds the in-memory database and persists it to localStorage.</summary>
 public class DataStore
 {
-    // bumped when the shape of the saved data or the sample data changes (older saved data is ignored)
     const string Key = "ems.data.v4";
     static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
     readonly IJSRuntime js;
@@ -38,7 +36,6 @@ public class DataStore
         await SaveAsync();
     }
 
-    /// <summary>Returns false if the browser refused the write (storage full).</summary>
     public async Task<bool> SaveAsync()
         => await js.InvokeAsync<bool>("ems.save", Key, JsonSerializer.Serialize(Data));
 
@@ -60,7 +57,6 @@ public class DataStore
         };
     }
 
-    // No., name, position, phone, address, monthly basic salary, date hired
     static readonly (string No, string Name, string Position, string Phone, string Address, decimal Salary, string Hired)[] People =
     {
         ("EMP001", "Juan Dela Cruz",     "Operations Manager",          "0917-555-0101", "Quezon City",       55000m, "2021-03-15"),
@@ -94,9 +90,8 @@ public class DataStore
         }
 
         Data.Users.Add(MakeUser(1, "owner", "owner123", "Owner", null));
-        Data.Users.Add(MakeUser(2, "employee", "employee123", "Employee", 2));   // Maria Santos
+        Data.Users.Add(MakeUser(2, "employee", "employee123", "Employee", 2));
 
-        // Attendance for the last ~2 months, so "Fill from attendance" has real data to read.
         var windowStart = new DateTime(now.Year, now.Month, 1).AddMonths(-2);
         SeedAttendance(now, windowStart);
         SeedPayrollHistory(now, windowStart);
@@ -105,7 +100,6 @@ public class DataStore
     static DateTime ParseDate(string s)
         => DateTime.TryParseExact(s, "yyyy-MM-dd", Inv, DateTimeStyles.None, out var d) ? d : DateTime.MinValue;
 
-    /// <summary>A small coloured avatar with the employee's initials, used as the sample "photo proof".</summary>
     static string PlaceholderPhoto(Employee e)
     {
         var parts = e.FullName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
@@ -116,10 +110,8 @@ public class DataStore
         return "data:image/svg+xml;base64," + Convert.ToBase64String(Encoding.UTF8.GetBytes(svg));
     }
 
-    // Rafael Navarro (IT Support) works the graveyard shift, so the sample data shows night differential.
     const int NightShiftEmployeeId = 9;
 
-    /// <summary>Mon-Sat punch-in/out records from windowStart until today. Fixed random seeds = the same data every time.</summary>
     void SeedAttendance(DateTime now, DateTime windowStart)
     {
         int recordId = 1;
@@ -137,14 +129,12 @@ public class DataStore
 
                 if (e.Id == NightShiftEmployeeId)
                 {
-                    // night shift: in around 10:30-11:15 PM, out the next morning around 6:00-6:30 AM
                     if (isToday || rnd.Next(0, 20) == 0) continue;
                     var nightIn = d + new TimeSpan(22, rnd.Next(30, 60), 0).Add(TimeSpan.FromMinutes(rnd.Next(0, 16)));
                     var nightOut = d.AddDays(1) + new TimeSpan(6, rnd.Next(0, 31), 0);
                     Data.Attendance.Add(new AttendanceRecord
                     {
                         Id = recordId++, EmployeeId = e.Id, Date = EmsService.DateKey(d),
-                        // the latest shift is left open ("still on duty") so it can be punched out to test the night differential
                         TimeIn = nightIn, TimeOut = (nightOut > now || (d == now.Date.AddDays(-1) && (now - nightIn).TotalHours <= 20)) ? null : nightOut, Photo = photo
                     });
                     continue;
@@ -152,12 +142,11 @@ public class DataStore
 
                 if (isToday)
                 {
-                    // today: only people who have "already arrived" (after 9 AM); Maria is left out so the employee login can try punching in
                     if (now.Hour < 9 || e.Id == 2 || rnd.Next(0, 4) == 0) continue;
                 }
                 else if (rnd.Next(0, 20) == 0)
                 {
-                    continue;   // about 1 in 20 days is an absence
+                    continue;
                 }
 
                 bool late = !isToday && rnd.Next(0, 10) < 3;
@@ -179,10 +168,6 @@ public class DataStore
         }
     }
 
-    /// <summary>
-    /// Saved payroll for every full month before this one (this year). Months covered by the sample attendance are
-    /// computed from it, so the payroll and the attendance agree; older months use fixed pseudo-random values.
-    /// </summary>
     void SeedPayrollHistory(DateTime now, DateTime windowStart)
     {
         int salaryId = 1;
@@ -192,10 +177,10 @@ public class DataStore
             for (int m = 1; m < now.Month; m++)
             {
                 var monthStart = new DateTime(now.Year, m, 1);
-                if (monthStart <= hired) continue;                    // first full month after hiring
+                if (monthStart <= hired) continue;
 
                 var period = $"{now.Year}-{m:00}";
-                var loan = e.Id % 4 == 0 ? 1000m : 0m;                // e.g. a company loan repayment
+                var loan = e.Id % 4 == 0 ? 1000m : 0m;
 
                 PayrollInput input;
                 if (monthStart >= windowStart)
