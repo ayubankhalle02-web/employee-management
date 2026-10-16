@@ -120,24 +120,52 @@ public static class PayrollCalculator
         return Round(AnnualTax(baseTaxable + excess) - AnnualTax(baseTaxable));
     }
 
-    /// <summary>Late minutes, absent days and overtime hours for one employee in one month, from the attendance records.</summary>
+    /// <summary>Hours between timeIn and timeOut that fall inside 10 PM - 6 AM (works across midnight and over several nights).</summary>
+    public static decimal NightHoursOf(DateTime timeIn, DateTime timeOut)
+    {
+        if (timeOut <= timeIn) return 0m;
+        double total = 0;
+        for (var day = timeIn.Date.AddDays(-1); day <= timeOut.Date; day = day.AddDays(1))
+        {
+            var windowStart = day + EmsService.NightStart;                 // 10 PM of this day
+            var windowEnd = day.AddDays(1) + EmsService.NightEnd;          // 6 AM of the next day
+            var from = timeIn > windowStart ? timeIn : windowStart;
+            var to = timeOut < windowEnd ? timeOut : windowEnd;
+            if (to > from) total += (to - from).TotalHours;
+        }
+        return Math.Round((decimal)total, 2);
+    }
+
+    /// <summary>Late minutes, absent days, overtime hours and night-differential hours for one employee in one month, from the attendance records.</summary>
     public static AttendanceSummary Summarize(Db data, Employee emp, string period, DateTime today)
     {
         var inv = CultureInfo.InvariantCulture;
         if (!DateTime.TryParseExact(period + "-01", "yyyy-MM-dd", inv, DateTimeStyles.None, out var first))
-            return new AttendanceSummary(0, 0, 0);
+            return new AttendanceSummary(0, 0, 0, 0);
 
         var last = first.AddMonths(1).AddDays(-1);
         var recs = data.Attendance.Where(a => a.EmployeeId == emp.Id && a.Date.StartsWith(period)).ToList();
 
         int lateMinutes = 0;
         double otHours = 0;
+        decimal nightHours = 0m;
         foreach (var a in recs)
         {
-            if (a.TimeIn is DateTime tin && tin.TimeOfDay > EmsService.ShiftStart)
+            if (a.TimeIn is not DateTime tin) continue;
+
+            // Punching in at/after 6 PM = night shift: it is never "late" and has no day-shift overtime.
+            bool dayShift = tin.TimeOfDay < EmsService.NightShiftFrom;
+
+            if (dayShift && tin.TimeOfDay > EmsService.ShiftStart)
                 lateMinutes += (int)(tin.TimeOfDay - EmsService.ShiftStart).TotalMinutes;
-            if (a.TimeOut is DateTime tout && tout.TimeOfDay > EmsService.ShiftEnd)
-                otHours += (tout.TimeOfDay - EmsService.ShiftEnd).TotalHours;
+
+            if (a.TimeOut is DateTime tout)
+            {
+                if (dayShift && tout > tin.Date + EmsService.ShiftEnd)
+                    otHours += (tout - (tin.Date + EmsService.ShiftEnd)).TotalHours;   // also counts work past midnight
+
+                nightHours += NightHoursOf(tin, tout);
+            }
         }
 
         // Absent = a Mon-Sat day (after the hire date, before today) with no attendance record.
@@ -154,6 +182,6 @@ public static class PayrollCalculator
             if (!present.Contains(EmsService.DateKey(d))) absent++;
         }
 
-        return new AttendanceSummary(lateMinutes, absent, Math.Round((decimal)otHours, 2));
+        return new AttendanceSummary(lateMinutes, absent, Math.Round((decimal)otHours, 2), Math.Round(nightHours, 2));
     }
 }

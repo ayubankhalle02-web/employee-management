@@ -116,6 +116,9 @@ public class DataStore
         return "data:image/svg+xml;base64," + Convert.ToBase64String(Encoding.UTF8.GetBytes(svg));
     }
 
+    // Rafael Navarro (IT Support) works the graveyard shift, so the sample data shows night differential.
+    const int NightShiftEmployeeId = 9;
+
     /// <summary>Mon-Sat punch-in/out records from windowStart until today. Fixed random seeds = the same data every time.</summary>
     void SeedAttendance(DateTime now, DateTime windowStart)
     {
@@ -131,6 +134,20 @@ public class DataStore
 
                 var rnd = new Random(e.Id * 100003 + d.Year * 400 + d.DayOfYear);
                 bool isToday = d == now.Date;
+
+                if (e.Id == NightShiftEmployeeId)
+                {
+                    // night shift: in around 10:30-11:15 PM, out the next morning around 6:00-6:30 AM
+                    if (isToday || rnd.Next(0, 20) == 0) continue;
+                    var nightIn = d + new TimeSpan(22, rnd.Next(30, 60), 0).Add(TimeSpan.FromMinutes(rnd.Next(0, 16)));
+                    var nightOut = d.AddDays(1) + new TimeSpan(6, rnd.Next(0, 31), 0);
+                    Data.Attendance.Add(new AttendanceRecord
+                    {
+                        Id = recordId++, EmployeeId = e.Id, Date = EmsService.DateKey(d),
+                        TimeIn = nightIn, TimeOut = nightOut > now ? null : nightOut, Photo = photo
+                    });
+                    continue;
+                }
 
                 if (isToday)
                 {
@@ -183,7 +200,7 @@ public class DataStore
                 if (monthStart >= windowStart)
                 {
                     var s = PayrollCalculator.Summarize(Data, e, period, now);
-                    input = new PayrollInput(s.LateMinutes, s.AbsentDays, s.OvertimeHours, 1500m, 0, 0, 0m, 0, loan);
+                    input = new PayrollInput(s.LateMinutes, s.AbsentDays, s.OvertimeHours, 1500m, 0, 0, s.NightHours, 0, loan);
                 }
                 else
                 {
@@ -195,7 +212,7 @@ public class DataStore
                         Allowance: 1500m,
                         RegHolidayDays: rnd.Next(0, 6) == 0 ? 1 : 0,
                         SpecialHolidayDays: 0,
-                        NightHours: 0,
+                        NightHours: e.Id == NightShiftEmployeeId ? 7m * rnd.Next(22, 27) : 0m,
                         LeaveDays: 0,
                         OtherDeductions: loan);
                 }

@@ -11,7 +11,7 @@ public record Result(bool Ok, string Message)
 }
 
 /// <summary>What the attendance records say about one employee in one month.</summary>
-public record AttendanceSummary(int LateMinutes, int AbsentDays, decimal OvertimeHours);
+public record AttendanceSummary(int LateMinutes, int AbsentDays, decimal OvertimeHours, decimal NightHours);
 
 public record MonthTotal(string Period, decimal Gross, decimal Net, decimal Sss, decimal PhilHealth, decimal PagIbig, decimal Tax, decimal Other);
 
@@ -36,7 +36,10 @@ public class EmsService
     // ---- Payroll rules (change these to match your store's policy) ----
     public static readonly TimeSpan ShiftStart = new(9, 0, 0);    // late after 9:00 AM
     public static readonly TimeSpan ShiftEnd = new(18, 0, 0);     // overtime after 6:00 PM
-    public const int WorkDaysPerMonth = 26;                       // daily rate = basic / 26
+    public static readonly TimeSpan NightStart = new(22, 0, 0);   // night differential window: 10:00 PM ...
+    public static readonly TimeSpan NightEnd = new(6, 0, 0);      // ... to 6:00 AM (next day)
+    public static readonly TimeSpan NightShiftFrom = new(18, 0, 0); // punching in at/after 6 PM = night shift (no late / day overtime)
+    public const int WorkDaysPerMonth = 26;                     // daily rate = basic / 26
     public const decimal HoursPerDay = 8m;
     public const decimal OvertimeMultiplier = 1.25m;
 
@@ -67,6 +70,14 @@ public class EmsService
 
     public static string DateKey(DateTime d) => d.ToString("yyyy-MM-dd", Inv);
 
+    /// <summary>A shift is still running if there is a punch-in with no punch-out within the last 20 hours (covers shifts that cross midnight).</summary>
+    static bool IsOnDuty(AttendanceRecord a, DateTime now) =>
+        a.TimeIn is DateTime tin && a.TimeOut == null && tin <= now && (now - tin).TotalHours <= 20;
+
+    AttendanceRecord? FindOpenRecord(int employeeId, DateTime now) =>
+        Data.Attendance.Where(a => a.EmployeeId == employeeId && IsOnDuty(a, now))
+            .OrderByDescending(a => a.TimeIn).FirstOrDefault();
+
     static int NextId(IEnumerable<int> ids) => ids.DefaultIfEmpty(0).Max() + 1;
 
     static Result Denied() => Result.Fail("You do not have permission to do that.");
@@ -86,7 +97,7 @@ public class EmsService
         if (auth.IsAdmin)
         {
             stats.ActiveEmployees = Data.Employees.Count(e => e.Status == "Active");
-            stats.TodayAttendance = Data.Attendance.Count(a => a.Date == today);
+            stats.TodayAttendance = Data.Attendance.Count(a => a.Date == today || IsOnDuty(a, now));
             stats.PendingRequests = Data.Requests.Count(r => r.Status == "Pending");
 
             stats.Trend = Data.Salaries
@@ -98,13 +109,13 @@ public class EmsService
                 .TakeLast(9)
                 .ToList();
 
-            stats.TodayRecords = Data.Attendance.Where(a => a.Date == today).OrderBy(a => a.TimeIn).ToList();
+            stats.TodayRecords = Data.Attendance.Where(a => a.Date == today || IsOnDuty(a, now)).OrderBy(a => a.TimeIn).ToList();
             stats.PendingList = Data.Requests.Where(r => r.Status == "Pending").OrderByDescending(r => r.RequestDate).Take(5).ToList();
             return stats;
         }
 
         var id = auth.EmployeeId;
-        var rec = Data.Attendance.FirstOrDefault(a => a.EmployeeId == id && a.Date == today);
+        var rec = FindOpenRecord(id ?? 0, now) ?? Data.Attendance.FirstOrDefault(a => a.EmployeeId == id && a.Date == today);
         stats.MyStatus = rec == null ? "Not punched in" : rec.TimeOut != null ? "Punched out" : "Punched in";
         stats.PendingRequests = Data.Requests.Count(r => r.EmployeeId == id && r.Status == "Pending");
         return stats;
@@ -236,6 +247,9 @@ public class EmsService
 
         var now = await NowAsync();
         var key = DateKey(now);
+        var open = FindOpenRecord(emp.Id, now);
+        if (open != null)
+            return Result.Fail($"{emp.FullName} punched in at {open.TimeIn:hh:mm tt} and has not punched out yet. Punch out first.");
         if (Data.Attendance.Any(a => a.EmployeeId == emp.Id && a.Date == key))
             return Result.Fail($"{emp.FullName} already has an attendance record today.");
 
@@ -264,14 +278,23 @@ public class EmsService
 
         var now = await NowAsync();
         var key = DateKey(now);
-        var rec = Data.Attendance.FirstOrDefault(a => a.EmployeeId == emp.Id && a.Date == key);
 
-        if (rec == null) return Result.Fail($"{emp.FullName} has not punched in today.");
-        if (rec.TimeOut != null) return Result.Fail($"{emp.FullName} already punched out today.");
+        // The open shift may have started yesterday (night shift), so look for any unfinished punch-in, not just today's.
+        var rec = FindOpenRecord(emp.Id, now);
+        if (rec == null)
+        {
+            var today = Data.Attendance.FirstOrDefault(a => a.EmployeeId == emp.Id && a.Date == key);
+            return Result.Fail(today?.TimeOut != null
+                ? $"{emp.FullName} already punched out today."
+                : $"{emp.FullName} has not punched in.");
+        }
 
         rec.TimeOut = now;
         await store.SaveAsync();
-        return Result.Success($"{emp.FullName} punched OUT at {now.ToString("hh:mm:ss tt", Inv)}.");
+
+        var night = PayrollCalculator.NightHoursOf(rec.TimeIn!.Value, now);
+        var extra = night > 0 ? $" Night differential hours: {night:0.##}." : "";
+        return Result.Success($"{emp.FullName} punched OUT at {now.ToString("hh:mm:ss tt", Inv)}.{extra}");
     }
 
     // ------------------------------------------------------------- salary
@@ -285,7 +308,7 @@ public class EmsService
     public AttendanceSummary Summarize(int employeeId, string period, DateTime today)
     {
         var emp = GetEmployee(employeeId);
-        return emp == null ? new AttendanceSummary(0, 0, 0) : PayrollCalculator.Summarize(Data, emp, period, today);
+        return emp == null ? new AttendanceSummary(0, 0, 0, 0) : PayrollCalculator.Summarize(Data, emp, period, today);
     }
 
     /// <summary>Saves one month of payroll. One record per employee per month (saving again replaces it).</summary>
